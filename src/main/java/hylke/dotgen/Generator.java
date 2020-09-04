@@ -4,10 +4,12 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
 import javax.xml.parsers.DocumentBuilder;
@@ -51,9 +53,13 @@ public class Generator {
     private final Map<String, Requerement> requirements = new TreeMap<>();
     private final Map<String, RequerementClass> requirementClasses = new LinkedHashMap<>();
 
+    private final Set<String> ignoreDeps = new HashSet<>();
+
     public Generator(String source, String target) {
         this.source = source;
         this.target = target;
+        ignoreDeps.add("ISO19103 2015 Conceptual Model Language");
+        ignoreDeps.add("Unified Modeling Language (UML). Version 2.3. May 2010");
     }
 
     public void process() throws IOException, SAXException, ParserConfigurationException, XPathExpressionException {
@@ -72,7 +78,7 @@ public class Generator {
         StringBuilder sb = new StringBuilder("digraph G {\n");
         sb.append("rankdir=LR;\n");
         sb.append("  node [shape=box];\n");
-        sb.append("  {rank=same;\n");
+        sb.append("  {\n");
         for (Requerement req : requirements.values()) {
             sb.append("    ")
                     .append('"').append(req.definition).append('"')
@@ -82,7 +88,7 @@ public class Generator {
         }
         sb.append("  };\n\n");
         sb.append("  node [shape=none];\n");
-        
+
         sb.append("  {\n");
         for (RequerementClass rq : requirementClasses.values()) {
             sb.append("    ")
@@ -197,7 +203,12 @@ public class Generator {
 
                 case "dependency":
                     value = cleanContent(valueCell.getTextContent(), false);
-                    reqClass.addDependency(value);
+                    if (value.startsWith("/")) {
+                        value = cleanContent(valueCell.getTextContent(), true);
+                    }
+                    if (!ignoreDeps.contains(value)) {
+                        reqClass.addDependency(value);
+                    }
                     break;
 
                 case "requirement":

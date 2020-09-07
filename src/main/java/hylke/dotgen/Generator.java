@@ -150,12 +150,19 @@ public class Generator {
                         .append('"').append(req.definition).append('"')
                         .append(";\n");
             }
-            for (String dep : rq.dependencies) {
+            for (String dep : rq.imports) {
                 sb.append("      ")
                         .append('"').append(rq.definition).append('"')
                         .append(" -> ")
                         .append('"').append(dep).append('"')
                         .append("[style=dashed];\n");
+            }
+            for (String dep : rq.dependencies) {
+                sb.append("      ")
+                        .append('"').append(rq.definition).append('"')
+                        .append(" -> ")
+                        .append('"').append(dep).append('"')
+                        .append("[style=dotted];\n");
             }
         }
         sb.append("}\n");
@@ -252,6 +259,12 @@ public class Generator {
                         reqClass.addDependency(value);
                         checkImageForRelation(value, mainImages);
                     }
+                    break;
+
+                case "imports":
+                    value = cleanContent(valueCell.getTextContent(), true);
+                    reqClass.addImport(value);
+                    checkImageForRelation(value, mainImages);
                     break;
 
                 case "requirement":
@@ -366,6 +379,7 @@ public class Generator {
         String targetType;
         String name = "'name'";
         final List<String> dependencies = new ArrayList<>();
+        final List<String> imports = new ArrayList<>();
         final List<Requerement> requirements = new ArrayList<>();
         final Set<Image> inImage = Image.emptySet();
 
@@ -376,6 +390,10 @@ public class Generator {
 
         public void addDependency(String dependency) {
             dependencies.add(dependency);
+        }
+
+        public void addImport(String dependency) {
+            imports.add(dependency);
         }
 
         public void addRequirement(Requerement req) {

@@ -4,6 +4,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -55,6 +56,34 @@ public class Generator {
 
     private final Set<String> ignoreDeps = new HashSet<>();
 
+    private enum Image {
+        OBS("^/req/obs.*"),
+        SAM("^/req/sam.*"),
+        NONE("^$");
+        public final Pattern definitionPattern;
+
+        private Image(String definitionRegex) {
+            this.definitionPattern = Pattern.compile(definitionRegex);
+        }
+
+        public static Set<Image> imagesMatchingDef(String definition) {
+            Set<Image> result = emptySet();
+            for (Image image : Image.values()) {
+                if (image.definitionPattern.matcher(definition).matches()) {
+                    result.add(image);
+                }
+            }
+            if (result.isEmpty()) {
+                result.add(NONE);
+            }
+            return result;
+        }
+
+        public static Set<Image> emptySet() {
+            return EnumSet.noneOf(Image.class);
+        }
+    }
+
     public Generator(String source, String target) {
         this.source = source;
         this.target = target;
@@ -64,22 +93,27 @@ public class Generator {
 
     public void process() throws IOException, SAXException, ParserConfigurationException, XPathExpressionException {
         File sourceFile = new File(source);
-        File targetFile = new File(target);
 
         parseSource(sourceFile);
-        generateDot(targetFile);
+        for (Image image : Image.values()) {
+            File targetFile = new File(target + "_" + image.name().toLowerCase() + ".dot");
+            generateDot(image, targetFile);
+        }
 
         LOGGER.info("Found {} RequirementClasses.", requirementClasses.size());
         LOGGER.info("Found {} Requirements.", requirements.size());
 
     }
 
-    private void generateDot(File targetFile) throws IOException {
+    private void generateDot(Image image, File targetFile) throws IOException {
         StringBuilder sb = new StringBuilder("digraph G {\n");
         sb.append("rankdir=LR;\n");
         sb.append("  node [shape=box];\n");
         sb.append("  {\n");
         for (Requerement req : requirements.values()) {
+            if (!req.inImage.contains(image)) {
+                continue;
+            }
             sb.append("    ")
                     .append('"').append(req.definition).append('"')
                     //.append(" -> ")
@@ -91,6 +125,9 @@ public class Generator {
 
         sb.append("  {\n");
         for (RequerementClass rq : requirementClasses.values()) {
+            if (!rq.inImage.contains(image)) {
+                continue;
+            }
             sb.append("    ")
                     .append('"').append(rq.definition).append('"')
                     .append("[label=<<TABLE>")
@@ -103,6 +140,9 @@ public class Generator {
         sb.append("  };\n\n");
         sb.append("  node [shape=ellipse];\n");
         for (RequerementClass rq : requirementClasses.values()) {
+            if (!rq.inImage.contains(image)) {
+                continue;
+            }
             for (Requerement req : rq.requirements) {
                 sb.append("      ")
                         .append('"').append(rq.definition).append('"')
@@ -172,6 +212,7 @@ public class Generator {
     private void parseRequirementsClassTable(NodeList rowList) throws XPathExpressionException {
         int rowCount = rowList.getLength();
         RequerementClass reqClass = null;
+        Set<Image> mainImages = Image.emptySet();
         for (int i = 0; i < rowCount; i++) {
             Node row = rowList.item(i).cloneNode(true);
             NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
@@ -189,6 +230,7 @@ public class Generator {
                 case "requirementssub-class":
                     value = cleanContent(valueCell.getTextContent(), true);
                     reqClass = findOrCreateRequirementClass(value);
+                    mainImages.addAll(Image.imagesMatchingDef(value));
                     break;
 
                 case "targettype":
@@ -208,6 +250,7 @@ public class Generator {
                     }
                     if (!ignoreDeps.contains(value)) {
                         reqClass.addDependency(value);
+                        checkImageForRelation(value, mainImages);
                     }
                     break;
 
@@ -215,12 +258,24 @@ public class Generator {
                     value = cleanContent(valueCell.getTextContent(), true);
                     Requerement req = findOrCreateRequirement(value);
                     reqClass.addRequirement(req);
+                    checkImageForRelation(value, mainImages);
                     break;
 
                 default:
                     value = cleanContent(valueCell.getTextContent(), false);
                     LOGGER.warn("Unknown row: {} - {}", name, value);
             }
+        }
+    }
+
+    private void checkImageForRelation(String value, Set<Image> mainImages) {
+        RequerementClass reqClass = requirementClasses.get(value);
+        if (reqClass != null) {
+            reqClass.inImage.addAll(mainImages);
+        }
+        Requerement req = requirements.get(value);
+        if (req != null) {
+            req.inImage.addAll(mainImages);
         }
     }
 
@@ -274,9 +329,11 @@ public class Generator {
 
         final String definition;
         String description;
+        final Set<Image> inImage = Image.emptySet();
 
         public Requerement(String definition) {
             this.definition = definition;
+            inImage.addAll(Image.imagesMatchingDef(definition));
         }
 
         @Override
@@ -310,9 +367,11 @@ public class Generator {
         String name = "'name'";
         final List<String> dependencies = new ArrayList<>();
         final List<Requerement> requirements = new ArrayList<>();
+        final Set<Image> inImage = Image.emptySet();
 
         public RequerementClass(String definition) {
             this.definition = definition;
+            inImage.addAll(Image.imagesMatchingDef(definition));
         }
 
         public void addDependency(String dependency) {

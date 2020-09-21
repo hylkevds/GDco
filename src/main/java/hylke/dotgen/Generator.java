@@ -52,13 +52,14 @@ public class Generator {
     private XPathExpression exprCellList;
 
     private final Map<String, Requerement> requirements = new TreeMap<>();
-    private final Map<String, RequerementClass> requirementClasses = new LinkedHashMap<>();
+    private final Map<String, Recommendation> recommendations = new TreeMap<>();
+    private final Map<String, RequerementClass> requirementClasses = new TreeMap<>();
 
     private final Set<String> ignoreDeps = new HashSet<>();
 
     private enum Image {
-        OBS("^/req/obs.*"),
-        SAM("^/req/sam.*"),
+        OBS("^/re[qc]/obs.*"),
+        SAM("^/re[qc]/sam.*"),
         NONE("^$");
         public final Pattern definitionPattern;
 
@@ -100,9 +101,48 @@ public class Generator {
             generateDot(image, targetFile);
         }
 
+        File targetFile = new File(target + "_requirements.html");
+        generateReqHtml(targetFile);
         LOGGER.info("Found {} RequirementClasses.", requirementClasses.size());
         LOGGER.info("Found {} Requirements.", requirements.size());
 
+    }
+
+    private void generateReqHtml(File targetFile) throws IOException {
+        StringBuilder sb = new StringBuilder("<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\"><html>");
+        sb.append("<head>\n");
+        sb.append("  <title>All Requirements</title>\n");
+        sb.append("  <meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\">\n");
+        sb.append("  <style>\n");
+        sb.append("    .def {white-space:nowrap}\n");
+        sb.append("    td {border-top:1px solid #999; vertical-align:top;padding:3px;}\n");
+        sb.append("  </style>\n");
+        sb.append("</head>\n");
+        sb.append("<body>\n");
+        sb.append("  <table>\n");
+        sb.append("    <tr><th colspan=\"2\">Requirements</th></tr>\n");
+        sb.append("    <tr><th>definition</th><th>description</th></tr>\n");
+        for (Requerement req : requirements.values()) {
+            sb.append("    ")
+                    .append("<tr>")
+                    .append("<td class='def'>").append(req.definition).append("</td>")
+                    .append("<td>").append(req.description).append("</td>")
+                    .append("</tr>\n");
+        }
+        sb.append("  </table>\n");
+        sb.append("    <tr><th colspan=\"2\">Recommendations</th></tr>\n");
+        sb.append("    <tr><th>definition</th><th>description</th></tr>\n");
+        for (Recommendation rec : recommendations.values()) {
+            sb.append("    ")
+                    .append("<tr>")
+                    .append("<td class='def'>").append(rec.definition).append("</td>")
+                    .append("<td>").append(rec.description).append("</td>")
+                    .append("</tr>\n");
+        }
+        sb.append("  </table>\n");
+        sb.append("</body>");
+        sb.append("</html>");
+        FileUtils.write(targetFile, sb, StandardCharsets.UTF_8);
     }
 
     private void generateDot(Image image, File targetFile) throws IOException {
@@ -116,6 +156,20 @@ public class Generator {
             }
             sb.append("    ")
                     .append('"').append(req.definition).append('"')
+                    //.append(" -> ")
+                    //.append('"').append(req.description).append('"')
+                    .append("\n");
+        }
+        sb.append("  };\n\n");
+
+        sb.append("  node [shape=box;style=dotted];\n");
+        sb.append("  {\n");
+        for (Recommendation rec : recommendations.values()) {
+            if (!rec.inImage.contains(image)) {
+                continue;
+            }
+            sb.append("    ")
+                    .append('"').append(rec.definition).append('"')
                     //.append(" -> ")
                     //.append('"').append(req.description).append('"')
                     .append("\n");
@@ -138,7 +192,7 @@ public class Generator {
                     .append("\n");
         }
         sb.append("  };\n\n");
-        sb.append("  node [shape=ellipse];\n");
+        sb.append("  node [shape=ellipse;style=solid];\n");
         for (RequerementClass rq : requirementClasses.values()) {
             if (!rq.inImage.contains(image)) {
                 continue;
@@ -149,6 +203,13 @@ public class Generator {
                         .append(" -> ")
                         .append('"').append(req.definition).append('"')
                         .append(";\n");
+            }
+            for (Recommendation rec : rq.recommendations) {
+                sb.append("      ")
+                        .append('"').append(rq.definition).append('"')
+                        .append(" -> ")
+                        .append('"').append(rec.definition).append('"')
+                        .append("[style=dotted];\n");
             }
             for (String dep : rq.imports) {
                 sb.append("      ")
@@ -203,13 +264,15 @@ public class Generator {
             }
             Node firstCell = cellList.item(0).cloneNode(true);
             String type = cleanContent(firstCell.getTextContent(), true);
-            LOGGER.info("  Rows: {}, Cols: {}, Type: '{}'", rowCount, colCount, type);
+            LOGGER.debug("  Rows: {}, Cols: {}, Type: '{}'", rowCount, colCount, type);
             if ("RequirementsClass".equalsIgnoreCase(type)) {
                 parseRequirementsClassTable(rowList);
             } else if ("RequirementsSub-class".equalsIgnoreCase(type)) {
                 parseRequirementsClassTable(rowList);
             } else if ((type.startsWith("/req") || type.startsWith("req")) && rowCount == 1) {
                 parseRequirementTable(rowList);
+            } else if (type.startsWith("/rec") && rowCount == 1) {
+                parseRecommendationTable(rowList);
             } else {
                 LOGGER.warn("    Unknown table type: {}", type);
             }
@@ -274,6 +337,13 @@ public class Generator {
                     checkImageForRelation(value, mainImages);
                     break;
 
+                case "recommendation":
+                    value = cleanContent(valueCell.getTextContent(), true);
+                    Recommendation rec = findOrCreateRecommendation(value);
+                    reqClass.addRecommendation(rec);
+                    checkImageForRelation(value, mainImages);
+                    break;
+
                 default:
                     value = cleanContent(valueCell.getTextContent(), false);
                     LOGGER.warn("Unknown row: {} - {}", name, value);
@@ -317,8 +387,37 @@ public class Generator {
         }
     }
 
+    private void parseRecommendationTable(NodeList rowList) throws XPathExpressionException {
+        int rowCount = rowList.getLength();
+        if (rowCount > 1) {
+            LOGGER.warn("Recommendation Table with multiple rows found");
+        }
+        for (int i = 0; i < rowCount; i++) {
+            Node row = rowList.item(i).cloneNode(true);
+            NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
+            int cellCount = cellList.getLength();
+            if (cellCount != 2) {
+                LOGGER.error("Recommendation row found with {} cells, expected 2", cellCount);
+                continue;
+            }
+            Node defCell = cellList.item(0).cloneNode(true);
+            Node descCell = cellList.item(1).cloneNode(true);
+            String def = cleanContent(defCell.getTextContent(), true);
+            String desc = cleanContent(descCell.getTextContent(), false);
+            Recommendation rec = findOrCreateRecommendation(def);
+            if (rec.description != null) {
+                LOGGER.warn("Recommendation {} already has a description: {}", def, rec.description);
+            }
+            rec.description = desc;
+        }
+    }
+
     private Requerement findOrCreateRequirement(String definition) {
         return requirements.computeIfAbsent(definition, t -> new Requerement(definition));
+    }
+
+    private Recommendation findOrCreateRecommendation(String definition) {
+        return recommendations.computeIfAbsent(definition, t -> new Recommendation(definition));
     }
 
     private RequerementClass findOrCreateRequirementClass(String definition) {
@@ -373,6 +472,41 @@ public class Generator {
 
     }
 
+    private static class Recommendation {
+
+        final String definition;
+        String description;
+        final Set<Image> inImage = Image.emptySet();
+
+        public Recommendation(String definition) {
+            this.definition = definition;
+            inImage.addAll(Image.imagesMatchingDef(definition));
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            }
+            if (obj == null) {
+                return false;
+            }
+            if (getClass() != obj.getClass()) {
+                return false;
+            }
+            final Requerement other = (Requerement) obj;
+            return Objects.equals(this.definition, other.definition);
+        }
+
+        @Override
+        public int hashCode() {
+            int hash = 3;
+            hash = 59 * hash + Objects.hashCode(this.definition);
+            return hash;
+        }
+
+    }
+
     private static class RequerementClass {
 
         final String definition;
@@ -381,6 +515,7 @@ public class Generator {
         final List<String> dependencies = new ArrayList<>();
         final List<String> imports = new ArrayList<>();
         final List<Requerement> requirements = new ArrayList<>();
+        final List<Recommendation> recommendations = new ArrayList<>();
         final Set<Image> inImage = Image.emptySet();
 
         public RequerementClass(String definition) {
@@ -398,6 +533,10 @@ public class Generator {
 
         public void addRequirement(Requerement req) {
             requirements.add(req);
+        }
+
+        public void addRecommendation(Recommendation rec) {
+            recommendations.add(rec);
         }
     }
 }

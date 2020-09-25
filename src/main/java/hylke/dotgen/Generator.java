@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -97,8 +98,15 @@ public class Generator {
 
         parseSource(sourceFile);
         for (Image image : Image.values()) {
-            File targetFile = new File(target + "_" + image.name().toLowerCase() + ".dot");
-            generateDot(image, targetFile);
+            File targetFileFull = new File(target + "_" + image.name().toLowerCase() + ".dot");
+            generateDot(image, targetFileFull, false);
+            File targetFileClass = new File(target + "_" + image.name().toLowerCase() + "_cls.dot");
+            generateDot(image, targetFileClass, true);
+        }
+
+        for (RequerementClass reqClass : requirementClasses.values()) {
+            File targetFileFull = new File(target + "_" + StringUtils.replace(reqClass.definition, "/", "_") + ".dot");
+            generateDotFromClass(reqClass, targetFileFull);
         }
 
         File targetFile = new File(target + "_requirements.html");
@@ -145,41 +153,71 @@ public class Generator {
         FileUtils.write(targetFile, sb, StandardCharsets.UTF_8);
     }
 
-    private void generateDot(Image image, File targetFile) throws IOException {
+    private void generateDotFromClass(RequerementClass mainClass, File targetFile) throws IOException {
+        Map<String, RequerementClass> classes = new LinkedHashMap<>();
+        Map<String, Requerement> reqs = new LinkedHashMap<>();
+        Map<String, Recommendation> reccs = new LinkedHashMap<>();
+        gatherFrom(mainClass, classes, reqs, reccs);
+        generateDot(null, targetFile, false, classes, reqs, reccs);
+    }
+
+    private void gatherFrom(RequerementClass mainClass, Map<String, RequerementClass> classes, Map<String, Requerement> reqs, Map<String, Recommendation> reccs) {
+        classes.put(mainClass.definition, mainClass);
+        for (Requerement req : mainClass.requirements) {
+            reqs.put(req.definition, req);
+        }
+        for (Recommendation rec : mainClass.recommendations) {
+            reccs.put(rec.definition, rec);
+        }
+        for (String imprt : mainClass.imports) {
+            RequerementClass imprtCls = findOrCreateRequirementClass(imprt);
+            gatherFrom(imprtCls, classes, reqs, reccs);
+        }
+    }
+
+    private void generateDot(Image image, File targetFile, boolean classesOnly) throws IOException {
+        generateDot(image, targetFile, classesOnly, requirementClasses, requirements, recommendations);
+    }
+
+    private void generateDot(Image image, File targetFile, boolean classesOnly, Map<String, RequerementClass> classes, Map<String, Requerement> reqs, Map<String, Recommendation> reccs) throws IOException {
         StringBuilder sb = new StringBuilder("digraph G {\n");
-        sb.append("rankdir=LR;\n");
-        sb.append("  node [shape=box];\n");
-        sb.append("  {\n");
-        for (Requerement req : requirements.values()) {
-            if (!req.inImage.contains(image)) {
-                continue;
+        sb.append("  rankdir=LR;splines=polyline;\n");
+        if (!classesOnly) {
+            sb.append("  node [shape=box];\n");
+            sb.append("  {\n");
+            for (Requerement req : reqs.values()) {
+                if (image != null && !req.inImage.contains(image)) {
+                    continue;
+                }
+                sb.append("    ")
+                        .append('"').append(req.definition).append('"')
+                        //.append(" -> ")
+                        //.append('"').append(req.description).append('"')
+                        .append("\n");
             }
-            sb.append("    ")
-                    .append('"').append(req.definition).append('"')
-                    //.append(" -> ")
-                    //.append('"').append(req.description).append('"')
-                    .append("\n");
+            sb.append("  };\n\n");
         }
-        sb.append("  };\n\n");
 
-        sb.append("  node [shape=box;style=dotted];\n");
-        sb.append("  {\n");
-        for (Recommendation rec : recommendations.values()) {
-            if (!rec.inImage.contains(image)) {
-                continue;
+        if (!classesOnly) {
+            sb.append("  node [shape=box;style=dotted];\n");
+            sb.append("  {\n");
+            for (Recommendation rec : reccs.values()) {
+                if (image != null && !rec.inImage.contains(image)) {
+                    continue;
+                }
+                sb.append("    ")
+                        .append('"').append(rec.definition).append('"')
+                        //.append(" -> ")
+                        //.append('"').append(req.description).append('"')
+                        .append("\n");
             }
-            sb.append("    ")
-                    .append('"').append(rec.definition).append('"')
-                    //.append(" -> ")
-                    //.append('"').append(req.description).append('"')
-                    .append("\n");
+            sb.append("  };\n\n");
         }
-        sb.append("  };\n\n");
-        sb.append("  node [shape=none];\n");
 
+        sb.append("  node [shape=plain];\n");
         sb.append("  {\n");
-        for (RequerementClass rq : requirementClasses.values()) {
-            if (!rq.inImage.contains(image)) {
+        for (RequerementClass rq : classes.values()) {
+            if (image != null && !rq.inImage.contains(image)) {
                 continue;
             }
             sb.append("    ")
@@ -193,23 +231,27 @@ public class Generator {
         }
         sb.append("  };\n\n");
         sb.append("  node [shape=ellipse;style=solid];\n");
-        for (RequerementClass rq : requirementClasses.values()) {
-            if (!rq.inImage.contains(image)) {
+        for (RequerementClass rq : classes.values()) {
+            if (image != null && !rq.inImage.contains(image)) {
                 continue;
             }
-            for (Requerement req : rq.requirements) {
-                sb.append("      ")
-                        .append('"').append(rq.definition).append('"')
-                        .append(" -> ")
-                        .append('"').append(req.definition).append('"')
-                        .append(";\n");
+            if (!classesOnly) {
+                for (Requerement req : rq.requirements) {
+                    sb.append("      ")
+                            .append('"').append(rq.definition).append('"')
+                            .append(" -> ")
+                            .append('"').append(req.definition).append('"')
+                            .append(";\n");
+                }
             }
-            for (Recommendation rec : rq.recommendations) {
-                sb.append("      ")
-                        .append('"').append(rq.definition).append('"')
-                        .append(" -> ")
-                        .append('"').append(rec.definition).append('"')
-                        .append("[style=dotted];\n");
+            if (!classesOnly) {
+                for (Recommendation rec : rq.recommendations) {
+                    sb.append("      ")
+                            .append('"').append(rq.definition).append('"')
+                            .append(" -> ")
+                            .append('"').append(rec.definition).append('"')
+                            .append("[style=dotted];\n");
+                }
             }
             for (String dep : rq.imports) {
                 sb.append("      ")
@@ -218,12 +260,14 @@ public class Generator {
                         .append('"').append(dep).append('"')
                         .append("[style=dashed];\n");
             }
-            for (String dep : rq.dependencies) {
-                sb.append("      ")
-                        .append('"').append(rq.definition).append('"')
-                        .append(" -> ")
-                        .append('"').append(dep).append('"')
-                        .append("[style=dotted];\n");
+            if (!classesOnly) {
+                for (String dep : rq.dependencies) {
+                    sb.append("      ")
+                            .append('"').append(rq.definition).append('"')
+                            .append(" -> ")
+                            .append('"').append(dep).append('"')
+                            .append("[style=dotted];\n");
+                }
             }
         }
         sb.append("}\n");

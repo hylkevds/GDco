@@ -7,7 +7,6 @@ import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -138,6 +137,7 @@ public class Generator {
                     .append("</tr>\n");
         }
         sb.append("  </table>\n");
+        sb.append("  <table>\n");
         sb.append("    <tr><th colspan=\"2\">Recommendations</th></tr>\n");
         sb.append("    <tr><th>definition</th><th>description</th></tr>\n");
         for (Recommendation rec : recommendations.values()) {
@@ -313,9 +313,9 @@ public class Generator {
                 parseRequirementsClassTable(rowList);
             } else if ("RequirementsSub-class".equalsIgnoreCase(type)) {
                 parseRequirementsClassTable(rowList);
-            } else if ((type.startsWith("/req") || type.startsWith("req")) && rowCount == 1) {
+            } else if ((type.startsWith("Requirement/req") || type.startsWith("/req") || type.startsWith("req")) && rowCount == 1) {
                 parseRequirementTable(rowList);
-            } else if (type.startsWith("/rec") && rowCount == 1) {
+            } else if ((type.startsWith("Recommendation/rec") || type.startsWith("/rec")) && rowCount == 1) {
                 parseRecommendationTable(rowList);
             } else {
                 LOGGER.warn("    Unknown table type: {}", type);
@@ -422,6 +422,9 @@ public class Generator {
             Node defCell = cellList.item(0).cloneNode(true);
             Node descCell = cellList.item(1).cloneNode(true);
             String def = cleanContent(defCell.getTextContent(), true);
+            if (def.startsWith("Requirement")) {
+                def = def.substring("Requirement".length());
+            }
             String desc = cleanContent(descCell.getTextContent(), false);
             Requerement req = findOrCreateRequirement(def);
             if (req.description != null) {
@@ -447,6 +450,9 @@ public class Generator {
             Node defCell = cellList.item(0).cloneNode(true);
             Node descCell = cellList.item(1).cloneNode(true);
             String def = cleanContent(defCell.getTextContent(), true);
+            if (def.startsWith("Recommendation")) {
+                def = def.substring("Recommendation".length());
+            }
             String desc = cleanContent(descCell.getTextContent(), false);
             Recommendation rec = findOrCreateRecommendation(def);
             if (rec.description != null) {

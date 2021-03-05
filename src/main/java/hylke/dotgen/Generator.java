@@ -55,7 +55,8 @@ public class Generator {
     private final Map<String, Recommendation> recommendations = new TreeMap<>();
     private final Map<String, RequerementClass> requirementClasses = new TreeMap<>();
 
-    private final Set<String> ignoreDeps = new HashSet<>();
+    private final Set<Pattern> ignoreDeps = new HashSet<>();
+    private final Set<String> ignoredDeps = new HashSet<>();
 
     private enum Image {
         OBS("^/re[qc]/obs.*"),
@@ -88,14 +89,17 @@ public class Generator {
     public Generator(String source, String target) {
         this.source = source;
         this.target = target;
-        ignoreDeps.add("ISO19103 2015 Conceptual Model Language");
-        ignoreDeps.add("Unified Modeling Language (UML). Version 2.3. May 2010");
+        ignoreDeps.add(Pattern.compile("ISO 19103.*"));
+        ignoreDeps.add(Pattern.compile("ISO 19107.*"));
+        ignoreDeps.add(Pattern.compile("ISO 19108.*"));
+        ignoreDeps.add(Pattern.compile(Pattern.quote("Unified Modeling Language (UML). Version 2.3. May 2010")));
     }
 
     public void process() throws IOException, SAXException, ParserConfigurationException, XPathExpressionException {
         File sourceFile = new File(source);
 
         parseSource(sourceFile);
+
         for (Image image : Image.values()) {
             File targetFileFull = new File(target + "_" + image.name().toLowerCase() + ".dot");
             generateDot(image, targetFileFull, false);
@@ -321,6 +325,11 @@ public class Generator {
                 LOGGER.warn("    Unknown table type: {}", type);
             }
         }
+
+        LOGGER.info("Ignored Dependencies:");
+        for (String ignoredDep : ignoredDeps) {
+            LOGGER.info("  '{}'", ignoredDep);
+        }
     }
 
     private void parseRequirementsClassTable(NodeList rowList) throws XPathExpressionException {
@@ -362,7 +371,16 @@ public class Generator {
                     if (value.startsWith("/")) {
                         value = cleanContent(valueCell.getTextContent(), true);
                     }
-                    if (!ignoreDeps.contains(value)) {
+                    boolean ignore = false;
+                    for (Pattern ignoreDep : ignoreDeps) {
+                        if (ignoreDep.matcher(value).matches()) {
+                            ignore = true;
+                            break;
+                        }
+                    }
+                    if (ignore) {
+                        ignoredDeps.add(value);
+                    } else {
                         reqClass.addDependency(value);
                         checkImageForRelation(value, mainImages);
                     }

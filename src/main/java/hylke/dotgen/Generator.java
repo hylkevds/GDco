@@ -132,11 +132,13 @@ public class Generator {
         sb.append("<body>\n");
         sb.append("  <table>\n");
         sb.append("    <tr><th colspan=\"2\">Requirements</th></tr>\n");
-        sb.append("    <tr><th>definition</th><th>description</th></tr>\n");
+        sb.append("    <tr><th>definition</th><th>name</th><th>description</th></tr>\n");
         for (Requerement req : requirements.values()) {
+            String name = req.definition.substring(1 + req.definition.lastIndexOf('/'));
             sb.append("    ")
                     .append("<tr>")
                     .append("<td class='def'>").append(req.definition).append("</td>")
+                    .append("<td class='def'>").append(name).append("</td>")
                     .append("<td>").append(req.description).append("</td>")
                     .append("</tr>\n");
         }

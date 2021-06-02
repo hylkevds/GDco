@@ -96,6 +96,8 @@ public class Generator {
     }
 
     public void process() throws IOException, SAXException, ParserConfigurationException, XPathExpressionException {
+        LOGGER.info("Working on: {}", source);
+        LOGGER.info(" Output to: {}", target);
         File sourceFile = new File(source);
 
         parseSource(sourceFile);
@@ -131,24 +133,25 @@ public class Generator {
         sb.append("</head>\n");
         sb.append("<body>\n");
         sb.append("  <table>\n");
-        sb.append("    <tr><th colspan=\"2\">Requirements</th></tr>\n");
-        sb.append("    <tr><th>definition</th><th>name</th><th>description</th></tr>\n");
+        sb.append("    <tr><th colspan=\"3\">Requirements</th></tr>\n");
+        sb.append("    <tr><th>#</th><th>definition</th><th>description</th></tr>\n");
         for (Requerement req : requirements.values()) {
             String name = req.definition.substring(1 + req.definition.lastIndexOf('/'));
             sb.append("    ")
                     .append("<tr>")
+                    .append("<td>").append(req.refCount).append("</td>")
                     .append("<td class='def'>").append(req.definition).append("</td>")
-                    .append("<td class='def'>").append(name).append("</td>")
                     .append("<td>").append(req.description).append("</td>")
                     .append("</tr>\n");
         }
         sb.append("  </table>\n");
         sb.append("  <table>\n");
-        sb.append("    <tr><th colspan=\"2\">Recommendations</th></tr>\n");
-        sb.append("    <tr><th>definition</th><th>description</th></tr>\n");
+        sb.append("    <tr><th colspan=\"3\">Recommendations</th></tr>\n");
+        sb.append("    <tr><th>#</th><th>definition</th><th>description</th></tr>\n");
         for (Recommendation rec : recommendations.values()) {
             sb.append("    ")
                     .append("<tr>")
+                    .append("<td>").append(rec.refCount).append("</td>")
                     .append("<td class='def'>").append(rec.definition).append("</td>")
                     .append("<td>").append(rec.description).append("</td>")
                     .append("</tr>\n");
@@ -283,12 +286,15 @@ public class Generator {
     private void parseSource(File sourceFile) throws IOException, ParserConfigurationException, XPathExpressionException, DOMException, SAXException {
         HtmlCleaner cleaner = new HtmlCleaner();
         CleanerProperties props = cleaner.getProperties();
+        LOGGER.info("Cleaning input...");
         TagNode clean = cleaner.clean(sourceFile);
+        LOGGER.info("Writing clean input...");
         String cleanString = new PrettyXmlSerializer(props).getAsString(clean, StandardCharsets.UTF_8.toString());
 
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
         DocumentBuilder builder = factory.newDocumentBuilder();
+        LOGGER.info("Parsing input...");
         Document doc = builder.parse(IOUtils.toInputStream(cleanString, StandardCharsets.UTF_8));
 
         XPathFactory xpathfactory = XPathFactory.newInstance();
@@ -324,7 +330,7 @@ public class Generator {
             } else if ((type.startsWith("Recommendation/rec") || type.startsWith("/rec")) && rowCount == 1) {
                 parseRecommendationTable(rowList);
             } else {
-                LOGGER.warn("    Unknown table type: {}", type);
+                LOGGER.warn("    Unknown table type: {}, {} rows", type, rowCount);
             }
         }
 
@@ -483,11 +489,15 @@ public class Generator {
     }
 
     private Requerement findOrCreateRequirement(String definition) {
-        return requirements.computeIfAbsent(definition, t -> new Requerement(definition));
+        final Requerement item = requirements.computeIfAbsent(definition, t -> new Requerement(definition));
+        item.refCount++;
+        return item;
     }
 
     private Recommendation findOrCreateRecommendation(String definition) {
-        return recommendations.computeIfAbsent(definition, t -> new Recommendation(definition));
+        final Recommendation item = recommendations.computeIfAbsent(definition, t -> new Recommendation(definition));
+        item.refCount++;
+        return item;
     }
 
     private RequerementClass findOrCreateRequirementClass(String definition) {
@@ -512,6 +522,7 @@ public class Generator {
         final String definition;
         String description;
         final Set<Image> inImage = Image.emptySet();
+        int refCount = -1;
 
         public Requerement(String definition) {
             this.definition = definition;
@@ -547,6 +558,7 @@ public class Generator {
         final String definition;
         String description;
         final Set<Image> inImage = Image.emptySet();
+        int refCount = -1;
 
         public Recommendation(String definition) {
             this.definition = definition;

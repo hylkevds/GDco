@@ -1,6 +1,8 @@
 #!/bin/bash
 echo "Step 1: HTML Parsing"
-java -jar target/DotGen-1.0-SNAPSHOT-jar-with-dependencies.jar OGCOMV3Draft.html output/OGCOMV3Draft
+INPUT='../20-082r2_OGC_Abstract_Specification_Topic_20_-_Observations_and_measurements.htm'
+OUTPUT='OMSv3'
+java -jar target/DotGen-1.0-SNAPSHOT-jar-with-dependencies.jar $INPUT output/${OUTPUT}
 echo "Step 2: Dot"
 cd output
 for i in *.dot;
@@ -11,7 +13,7 @@ for i in *.dot;
   done
 cd ..
 echo "Step 3: Copy to Owncloud"
-cp output/png/*.png output/svg/*.svg output/OGCOMV3Draft_*.html ~/ownCloud/MyShare/OandM/
+cp output/png/*.png output/svg/*.svg output/${OUTPUT}_*.html ~/ownCloud/MyShare/OandM/
 echo "Step 4: Done"
 
 

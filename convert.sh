@@ -13,7 +13,7 @@ for i in *.dot;
   done
 cd ..
 echo "Step 3: Copy to Owncloud"
-cp output/png/*.png output/svg/*.svg output/${OUTPUT}_*.html ~/ownCloud/MyShare/OandM/
+cp output/png/*.png output/svg/*.svg output/${OUTPUT}_*.html output/${OUTPUT}.ttl ~/ownCloud/MyShare/OandM/
 echo "Step 4: Done"
 
 

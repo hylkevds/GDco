@@ -1,40 +1,23 @@
 package hylke.dotgen;
 
+import hylke.dotgen.model.Data;
+import hylke.dotgen.model.ConformanceClass;
+import hylke.dotgen.model.Recommendation;
+import hylke.dotgen.model.Requerement;
+import hylke.dotgen.model.RequerementClass;
+import hylke.dotgen.model.Image;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.EnumSet;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.ParserConfigurationException;
-import javax.xml.xpath.XPath;
-import javax.xml.xpath.XPathConstants;
-import javax.xml.xpath.XPathExpression;
 import javax.xml.xpath.XPathExpressionException;
-import javax.xml.xpath.XPathFactory;
 import org.apache.commons.io.FileUtils;
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.RegExUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.htmlcleaner.CleanerProperties;
-import org.htmlcleaner.HtmlCleaner;
-import org.htmlcleaner.PrettyXmlSerializer;
-import org.htmlcleaner.TagNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.w3c.dom.DOMException;
-import org.w3c.dom.Document;
-import org.w3c.dom.Node;
-import org.w3c.dom.NodeList;
 import org.xml.sax.SAXException;
 
 /**
@@ -44,58 +27,20 @@ import org.xml.sax.SAXException;
 public class Generator {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Generator.class.getName());
+    private static final String DATE_MODIFIED = "2021-07-08";
+    private static final String DATE_CREATED = "2021-07-08";
+    private static final String DATE_APPROVED = "2021-12-20";
+    private static final String DATE_SUBMITTED = "2021-07-08";
+    private static final String DATE_ACCEPTED = "2099-08-02";
+
     private final String source;
     private final String target;
 
-    private XPathExpression exprTablesList;
-    private XPathExpression exprRowList;
-    private XPathExpression exprCellList;
-
-    private final Map<String, Requerement> requirements = new TreeMap<>();
-    private final Map<String, Recommendation> recommendations = new TreeMap<>();
-    private final Map<String, RequerementClass> requirementClasses = new TreeMap<>();
-    private final Map<String, ConformanceClass> conformanceClasses = new TreeMap<>();
-
-    private final Set<Pattern> ignoreReqs = new HashSet<>();
-    private final Set<Pattern> ignoreDeps = new HashSet<>();
-    private final Set<String> ignoredDeps = new HashSet<>();
-
-    private enum Image {
-        OBS("^/re[qc]/obs.*"),
-        SAM("^/re[qc]/sam.*"),
-        NONE("^$");
-        public final Pattern definitionPattern;
-
-        private Image(String definitionRegex) {
-            this.definitionPattern = Pattern.compile(definitionRegex);
-        }
-
-        public static Set<Image> imagesMatchingDef(String definition) {
-            Set<Image> result = emptySet();
-            for (Image image : Image.values()) {
-                if (image.definitionPattern.matcher(definition).matches()) {
-                    result.add(image);
-                }
-            }
-            if (result.isEmpty()) {
-                result.add(NONE);
-            }
-            return result;
-        }
-
-        public static Set<Image> emptySet() {
-            return EnumSet.noneOf(Image.class);
-        }
-    }
+    private Data documentData = new Data();
 
     public Generator(String source, String target) {
         this.source = source;
         this.target = target;
-        ignoreReqs.add(Pattern.compile(".*[{].*"));
-        ignoreDeps.add(Pattern.compile("ISO 19103.*"));
-        ignoreDeps.add(Pattern.compile("ISO 19107.*"));
-        ignoreDeps.add(Pattern.compile("ISO 19108.*"));
-        ignoreDeps.add(Pattern.compile(Pattern.quote("Unified Modeling Language (UML). Version 2.3. May 2010")));
     }
 
     public void process() throws IOException, SAXException, ParserConfigurationException, XPathExpressionException {
@@ -103,7 +48,14 @@ public class Generator {
         LOGGER.info(" Output to: {}", target);
         File sourceFile = new File(source);
 
-        parseSource(sourceFile);
+        documentData = new ParserOms()
+                .addIgnoreReq(".*[{].*")
+                .addIgnoreDep("ISO 19103.*")
+                .addIgnoreDep("ISO 19107.*")
+                .addIgnoreDep("ISO 19108.*")
+                .addIgnoreDep(Pattern.quote("Unified Modeling Language (UML). Version 2.3. May 2010"))
+                .parseSource(sourceFile)
+                .getDocumentData();
 
         for (Image image : Image.values()) {
             File targetFileFull = new File(target + "_" + image.name().toLowerCase() + ".dot");
@@ -112,15 +64,15 @@ public class Generator {
             generateDot(image, targetFileClass, true);
         }
 
-        for (RequerementClass reqClass : requirementClasses.values()) {
+        for (RequerementClass reqClass : documentData.getRequirementClasses().values()) {
             File targetFileFull = new File(target + "_" + StringUtils.replace(reqClass.definition, "/", "_") + ".dot");
             generateDotFromClass(reqClass, targetFileFull);
         }
 
         generateReqHtml(new File(target + "_requirements.html"));
         generateTtl(new File(target + ".ttl"));
-        LOGGER.info("Found {} RequirementClasses.", requirementClasses.size());
-        LOGGER.info("Found {} Requirements.", requirements.size());
+        LOGGER.info("Found {} RequirementClasses.", documentData.getRequirementClasses().size());
+        LOGGER.info("Found {} Requirements.", documentData.getRequirements().size());
 
     }
 
@@ -144,14 +96,14 @@ public class Generator {
                 .append("\n")
                 .append("<http://www.opengis.net/def/docs/20-082r2> a spec:Specification ;\n")
                 .append("    dcterms:creator \"Kathi Schleidt\" ;\n")
-                .append("    dcterms:dateAccepted \"2099-08-02\"^^xsd:date ;\n")
-                .append("    dcterms:dateSubmitted \"2021-07-08\"^^xsd:date ;\n")
+                .append("    dcterms:dateAccepted \"").append(DATE_ACCEPTED).append("\"^^xsd:date ;\n")
+                .append("    dcterms:dateSubmitted \"").append(DATE_SUBMITTED).append("\"^^xsd:date ;\n")
                 .append("    dcterms:identifier \"http://www.opengis.net/doc/is/OMS/3.0\" ;\n")
                 .append("    reg:status reg:statusValid ;\n")
                 .append("    na:doctype ogcdt:ip ;\n")
                 .append("    spec:authority \"Open Geospatial Consortium\" ;\n");
         boolean first = true;
-        for (ConformanceClass confClass : conformanceClasses.values()) {
+        for (ConformanceClass confClass : documentData.getConformanceClasses().values()) {
             if (first) {
                 first = false;
                 sb.append("    spec:class ");
@@ -161,7 +113,7 @@ public class Generator {
             sb.append("<http://www.opengis.net/spec/OMS/3.0").append(confClass.definition).append(">");
         }
         sb.append(" ;\n")
-                .append("    spec:date \"2021-12-20\"^^xsd:date ;\n")
+                .append("    spec:date \"").append(DATE_APPROVED).append("\"^^xsd:date ;\n")
                 .append("    specrel:implementation <http://www.opengis.net/def/docs/20-082r2> ;\n")
                 .append("    skos:notation \"20-082r2\"^^na:doc_no ;\n")
                 .append("    skos:prefLabel \"OGC® Abstract Specification Topic 20 - Observations and measurements\" ;\n")
@@ -171,7 +123,7 @@ public class Generator {
         sb.append("\n\n");
 
         // Conformance Tests
-        for (Requerement req : requirements.values()) {
+        for (Requerement req : documentData.getRequirements().values()) {
             String confTestDef = req.definition.replace("/req/", "/conf/");
             sb.append("<http://www.opengis.net/spec/OMS/3.0").append(confTestDef).append("> a spec:ConformanceTest,\n")
                     .append("        skos:Concept ;\n")
@@ -194,7 +146,7 @@ public class Generator {
         sb.append("\n\n\n");
 
         // RequirementClasses
-        for (RequerementClass reqClass : requirementClasses.values()) {
+        for (RequerementClass reqClass : documentData.getRequirementClasses().values()) {
             sb.append("<http://www.opengis.net/spec/OMS/3.0").append(reqClass.definition).append("> a spec:RequirementClass,\n")
                     .append("        skos:Concept ;\n");
             for (Requerement req : reqClass.requirements) {
@@ -211,7 +163,7 @@ public class Generator {
         sb.append("\n\n\n");
 
         // Requirements
-        for (Requerement req : requirements.values()) {
+        for (Requerement req : documentData.getRequirements().values()) {
             sb.append("<http://www.opengis.net/spec/OMS/3.0").append(req.definition).append("> a spec:Requirement,\n")
                     .append("        skos:Concept ;\n")
                     .append("    dcterms:description \"").append(req.description.replaceAll("[\"]", "\\\"")).append("\" ;\n");
@@ -226,8 +178,7 @@ public class Generator {
         sb.append("\n\n\n");
 
         // Conformance Classes
-        for (ConformanceClass confClass : conformanceClasses.values()) {
-            RequerementClass reqClass = requirementClasses.get(confClass.definition.replace("/conf/", "/req/"));
+        for (ConformanceClass confClass : documentData.getConformanceClasses().values()) {
             sb.append("<http://www.opengis.net/spec/OMS/3.0").append(confClass.definition).append("> a spec:ConformanceClass,\n")
                     .append("        skos:Concept ;\n")
                     .append("    skos:definition \"").append(confClass.definition).append("\" ;\n")
@@ -239,8 +190,8 @@ public class Generator {
         sb.append("\n\n\n");
 
         sb.append("<http://www.opengis.net/spec/OMS/3.0> a skos:ConceptScheme ;\n")
-                .append("    dcterms:created \"2021-07-08\"^^xsd:date ;\n")
-                .append("    dcterms:modified \"2021-07-08\"^^xsd:date ;\n")
+                .append("    dcterms:created \"").append(DATE_CREATED).append("\"^^xsd:date ;\n")
+                .append("    dcterms:modified \"").append(DATE_MODIFIED).append("\"^^xsd:date ;\n")
                 .append("    dcterms:source <http://www.opengis.net/def/docs/20-082r2> ;\n")
                 .append("    skos:definition \"A convenience hierarchy for navigating the elements of a specification using the SKOS model\" ;\n")
                 .append("    skos:hasTopConcept <http://www.opengis.net/spec/OMS/3.0/conf/obs-cpt>,\n")
@@ -271,7 +222,7 @@ public class Generator {
                 .append("  <table>\n")
                 .append("    <tr><th colspan=\"3\">Requirements</th></tr>\n")
                 .append("    <tr><th>#</th><th>definition</th><th>description</th></tr>\n");
-        for (Requerement req : requirements.values()) {
+        for (Requerement req : documentData.getRequirements().values()) {
             String name = req.definition.substring(1 + req.definition.lastIndexOf('/'));
             sb.append("    ")
                     .append("<tr>")
@@ -285,7 +236,7 @@ public class Generator {
         sb.append("  <table>\n")
                 .append("    <tr><th colspan=\"3\">Recommendations</th></tr>\n")
                 .append("    <tr><th>#</th><th>definition</th><th>description</th></tr>\n");
-        for (Recommendation rec : recommendations.values()) {
+        for (Recommendation rec : documentData.getRecommendations().values()) {
             sb.append("    ")
                     .append("<tr>")
                     .append("<td>").append(rec.refCount).append("</td>")
@@ -298,7 +249,7 @@ public class Generator {
         sb.append("  <table>\n")
                 .append("    <tr><th colspan=\"4\">RequirementClasses</th></tr>\n")
                 .append("    <tr><th>#</th><th>definition</th><th>name</th><th>type</th></tr>\n");
-        for (RequerementClass confCls : requirementClasses.values()) {
+        for (RequerementClass confCls : documentData.getRequirementClasses().values()) {
             sb.append("    ")
                     .append("<tr>")
                     .append("<td>").append(confCls.refCount).append("</td>")
@@ -312,7 +263,7 @@ public class Generator {
         sb.append("  <table>\n")
                 .append("    <tr><th colspan=\"5\">Conformance Classes</th></tr>\n")
                 .append("    <tr><th>definition</th><th>requirement</th><th>purpose</th><th>method</th><th>type</th></tr>\n");
-        for (ConformanceClass confCls : conformanceClasses.values()) {
+        for (ConformanceClass confCls : documentData.getConformanceClasses().values()) {
             sb.append("    ")
                     .append("<tr>")
                     .append("<td class='def'>").append(confCls.definition).append("</td>")
@@ -330,9 +281,9 @@ public class Generator {
     }
 
     private void generateDotFromClass(RequerementClass mainClass, File targetFile) throws IOException {
-        Map<String, RequerementClass> classes = new LinkedHashMap<>();
-        Map<String, Requerement> reqs = new LinkedHashMap<>();
-        Map<String, Recommendation> reccs = new LinkedHashMap<>();
+        Map<String, RequerementClass> classes = new TreeMap<>();
+        Map<String, Requerement> reqs = new TreeMap<>();
+        Map<String, Recommendation> reccs = new TreeMap<>();
         gatherFrom(mainClass, classes, reqs, reccs);
         generateDot(null, targetFile, false, classes, reqs, reccs);
     }
@@ -346,13 +297,13 @@ public class Generator {
             reccs.put(rec.definition, rec);
         }
         for (String imprt : mainClass.imports) {
-            RequerementClass imprtCls = findOrCreateRequirementClass(imprt);
+            RequerementClass imprtCls = documentData.findOrCreateRequirementClass(imprt);
             gatherFrom(imprtCls, classes, reqs, reccs);
         }
     }
 
     private void generateDot(Image image, File targetFile, boolean classesOnly) throws IOException {
-        generateDot(image, targetFile, classesOnly, requirementClasses, requirements, recommendations);
+        generateDot(image, targetFile, classesOnly, documentData.getRequirementClasses(), documentData.getRequirements(), documentData.getRecommendations());
     }
 
     private void generateDot(Image image, File targetFile, boolean classesOnly, Map<String, RequerementClass> classes, Map<String, Requerement> reqs, Map<String, Recommendation> reccs) throws IOException {
@@ -450,450 +401,4 @@ public class Generator {
         FileUtils.write(targetFile, sb, StandardCharsets.UTF_8);
     }
 
-    private void parseSource(File sourceFile) throws IOException, ParserConfigurationException, XPathExpressionException, DOMException, SAXException {
-        HtmlCleaner cleaner = new HtmlCleaner();
-        CleanerProperties props = cleaner.getProperties();
-        LOGGER.info("Cleaning input...");
-        TagNode clean = cleaner.clean(sourceFile);
-        LOGGER.info("Writing clean input...");
-        String cleanString = new PrettyXmlSerializer(props).getAsString(clean, StandardCharsets.UTF_8.toString());
-
-        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-        factory.setNamespaceAware(true);
-        DocumentBuilder builder = factory.newDocumentBuilder();
-        LOGGER.info("Parsing input...");
-        Document doc = builder.parse(IOUtils.toInputStream(cleanString, StandardCharsets.UTF_8));
-
-        XPathFactory xpathfactory = XPathFactory.newInstance();
-        XPath xpath = xpathfactory.newXPath();
-        exprTablesList = xpath.compile("//table");
-        exprRowList = xpath.compile("//tr");
-        exprCellList = xpath.compile("//td");
-
-        NodeList stationList = (NodeList) exprTablesList.evaluate(doc, XPathConstants.NODESET);
-        int total = stationList.getLength();
-        LOGGER.info("Found {} tables.", total);
-        for (int i = 0; i < total; i++) {
-            Node tableNode = stationList.item(i).cloneNode(true);
-            NodeList rowList = (NodeList) exprRowList.evaluate(tableNode, XPathConstants.NODESET);
-            int rowCount = rowList.getLength();
-
-            Node firstRow = rowList.item(0).cloneNode(true);
-            NodeList cellList = (NodeList) exprCellList.evaluate(firstRow, XPathConstants.NODESET);
-            int colCount = cellList.getLength();
-
-            if (colCount != 2) {
-                continue;
-            }
-            Node firstCell = cellList.item(0).cloneNode(true);
-            String type = cleanContent(firstCell.getTextContent(), true);
-            LOGGER.debug("  Rows: {}, Cols: {}, Type: '{}'", rowCount, colCount, type);
-            if ("RequirementsClass".equalsIgnoreCase(type)) {
-                parseRequirementsClassTable(rowList);
-            } else if ("RequirementsSub-class".equalsIgnoreCase(type)) {
-                parseRequirementsClassTable(rowList);
-            } else if ("ConformanceClass".equalsIgnoreCase(type)) {
-                parseConformanceClassTable(rowList);
-            } else if ((type.startsWith("Requirement/req") || type.startsWith("/req") || type.startsWith("req")) && rowCount == 1) {
-                parseRequirementTable(rowList);
-            } else if ((type.startsWith("Recommendation/rec") || type.startsWith("/rec")) && rowCount == 1) {
-                parseRecommendationTable(rowList);
-            } else {
-                LOGGER.warn("    Unknown table type: {}, {} rows", type, rowCount);
-            }
-        }
-
-        LOGGER.info("Ignored Dependencies:");
-        for (String ignoredDep : ignoredDeps) {
-            LOGGER.info("  '{}'", ignoredDep);
-        }
-    }
-
-    private void parseRequirementsClassTable(NodeList rowList) throws XPathExpressionException {
-        int rowCount = rowList.getLength();
-        RequerementClass reqClass = null;
-        Set<Image> mainImages = Image.emptySet();
-        for (int i = 0; i < rowCount; i++) {
-            Node row = rowList.item(i).cloneNode(true);
-            NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
-            int cellCount = cellList.getLength();
-            if (cellCount != 2) {
-                LOGGER.error("    Requirement row found with {} cells, expected 2", cellCount);
-                continue;
-            }
-            Node nameCell = cellList.item(0).cloneNode(true);
-            Node valueCell = cellList.item(1).cloneNode(true);
-            String name = cleanContent(nameCell.getTextContent(), true);
-            String value;
-            switch (name.toLowerCase()) {
-                case "requirementsclass":
-                case "requirementssub-class":
-                    value = cleanContent(valueCell.getTextContent(), true);
-                    if (matchesAnyOf(value, ignoreReqs)) {
-                        return;
-                    }
-                    reqClass = findOrCreateRequirementClass(value);
-                    mainImages.addAll(Image.imagesMatchingDef(value));
-                    break;
-
-                case "targettype":
-                    value = cleanContent(valueCell.getTextContent(), false);
-                    reqClass.targetType = value;
-                    break;
-
-                case "name":
-                    value = cleanContent(valueCell.getTextContent(), false);
-                    reqClass.name = value;
-                    break;
-
-                case "dependency":
-                    value = cleanContent(valueCell.getTextContent(), false);
-                    if (value.startsWith("/")) {
-                        value = cleanContent(valueCell.getTextContent(), true);
-                    }
-                    if (matchesAnyOf(value, ignoreDeps)) {
-                        ignoredDeps.add(value);
-                    } else {
-                        reqClass.addDependency(value);
-                        checkImageForRelation(value, mainImages);
-                    }
-                    break;
-
-                case "imports":
-                    value = cleanContent(valueCell.getTextContent(), true);
-                    if (matchesAnyOf(value, ignoreReqs)) {
-                        continue;
-                    }
-                    findOrCreateRequirementClass(value);
-                    reqClass.addImport(value);
-                    checkImageForRelation(value, mainImages);
-                    break;
-
-                case "requirement":
-                    value = cleanContent(valueCell.getTextContent(), true);
-                    if (matchesAnyOf(value, ignoreReqs)) {
-                        continue;
-                    }
-                    Requerement req = findOrCreateRequirement(value);
-                    reqClass.addRequirement(req);
-                    req.inClass.add(reqClass);
-                    checkImageForRelation(value, mainImages);
-                    break;
-
-                case "recommendation":
-                    value = cleanContent(valueCell.getTextContent(), true);
-                    if (matchesAnyOf(value, ignoreReqs)) {
-                        continue;
-                    }
-                    Recommendation rec = findOrCreateRecommendation(value);
-                    reqClass.addRecommendation(rec);
-                    checkImageForRelation(value, mainImages);
-                    break;
-
-                default:
-                    value = cleanContent(valueCell.getTextContent(), false);
-                    LOGGER.warn("Unknown row: {} - {}", name, value);
-            }
-        }
-    }
-
-    private void parseConformanceClassTable(NodeList rowList) throws XPathExpressionException {
-        int rowCount = rowList.getLength();
-        ConformanceClass confClass = null;
-        for (int i = 0; i < rowCount; i++) {
-            Node row = rowList.item(i).cloneNode(true);
-            NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
-            int cellCount = cellList.getLength();
-            if (cellCount != 2) {
-                LOGGER.error("    Requirement row found with {} cells, expected 2", cellCount);
-                continue;
-            }
-            Node nameCell = cellList.item(0).cloneNode(true);
-            Node valueCell = cellList.item(1).cloneNode(true);
-            String name = cleanContent(nameCell.getTextContent(), true);
-            String value;
-            switch (name.toLowerCase()) {
-                case "conformanceclass":
-                    value = cleanContent(valueCell.getTextContent(), true);
-                    if (matchesAnyOf(value, ignoreReqs)) {
-                        return;
-                    }
-                    confClass = findOrCreateConformanceClass(value);
-                    break;
-
-                case "testpurpose":
-                    value = cleanContent(valueCell.getTextContent(), false);
-                    confClass.purpose = value;
-                    break;
-
-                case "testmethod":
-                    value = cleanContent(valueCell.getTextContent(), false);
-                    confClass.method = value;
-                    break;
-
-                case "testtype":
-                    value = cleanContent(valueCell.getTextContent(), false);
-                    confClass.type = value;
-                    break;
-
-                case "requirements":
-                    value = cleanContent(valueCell.getTextContent(), true);
-                    if (matchesAnyOf(value, ignoreReqs)) {
-                        continue;
-                    }
-                    RequerementClass req = findOrCreateRequirementClass(value);
-                    confClass.addRequirement(req);
-                    break;
-
-                default:
-                    value = cleanContent(valueCell.getTextContent(), false);
-                    LOGGER.warn("Unknown row: {} - {}", name, value);
-            }
-        }
-    }
-
-    private void checkImageForRelation(String value, Set<Image> mainImages) {
-        RequerementClass reqClass = requirementClasses.get(value);
-        if (reqClass != null) {
-            reqClass.inImage.addAll(mainImages);
-        }
-        Requerement req = requirements.get(value);
-        if (req != null) {
-            req.inImage.addAll(mainImages);
-        }
-    }
-
-    private void parseRequirementTable(NodeList rowList) throws XPathExpressionException {
-        int rowCount = rowList.getLength();
-        if (rowCount > 1) {
-            LOGGER.warn("Requirements Table with multiple rows found");
-        }
-        for (int i = 0; i < rowCount; i++) {
-            Node row = rowList.item(i).cloneNode(true);
-            NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
-            int cellCount = cellList.getLength();
-            if (cellCount != 2) {
-                LOGGER.error("Requirement row found with {} cells, expected 2", cellCount);
-                continue;
-            }
-            Node defCell = cellList.item(0).cloneNode(true);
-            Node descCell = cellList.item(1).cloneNode(true);
-            String def = cleanContent(defCell.getTextContent(), true);
-            if (def.startsWith("Requirement")) {
-                def = def.substring("Requirement".length());
-            }
-            if (matchesAnyOf(def, ignoreReqs)) {
-                continue;
-            }
-            String desc = cleanContent(descCell.getTextContent(), false);
-            Requerement req = findOrCreateRequirement(def);
-            if (!req.description.isEmpty()) {
-                LOGGER.warn("Requirement {} already has a description: {}", def, req.description);
-            }
-            req.description = desc;
-        }
-    }
-
-    private void parseRecommendationTable(NodeList rowList) throws XPathExpressionException {
-        int rowCount = rowList.getLength();
-        if (rowCount > 1) {
-            LOGGER.warn("Recommendation Table with multiple rows found");
-        }
-        for (int i = 0; i < rowCount; i++) {
-            Node row = rowList.item(i).cloneNode(true);
-            NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
-            int cellCount = cellList.getLength();
-            if (cellCount != 2) {
-                LOGGER.error("Recommendation row found with {} cells, expected 2", cellCount);
-                continue;
-            }
-            Node defCell = cellList.item(0).cloneNode(true);
-            Node descCell = cellList.item(1).cloneNode(true);
-            String def = cleanContent(defCell.getTextContent(), true);
-            if (def.startsWith("Recommendation")) {
-                def = def.substring("Recommendation".length());
-            }
-            if (matchesAnyOf(def, ignoreReqs)) {
-                continue;
-            }
-            String desc = cleanContent(descCell.getTextContent(), false);
-            Recommendation rec = findOrCreateRecommendation(def);
-            if (!rec.description.isEmpty()) {
-                LOGGER.warn("Recommendation {} already has a description: {}", def, rec.description);
-            }
-            rec.description = desc;
-        }
-    }
-
-    private Requerement findOrCreateRequirement(String definition) {
-        final Requerement item = requirements.computeIfAbsent(definition, t -> new Requerement(definition));
-        item.refCount++;
-        return item;
-    }
-
-    private Recommendation findOrCreateRecommendation(String definition) {
-        final Recommendation item = recommendations.computeIfAbsent(definition, t -> new Recommendation(definition));
-        item.refCount++;
-        return item;
-    }
-
-    private RequerementClass findOrCreateRequirementClass(String definition) {
-        final RequerementClass item = requirementClasses.computeIfAbsent(definition, t -> new RequerementClass(definition));
-        item.refCount++;
-        return item;
-    }
-
-    private ConformanceClass findOrCreateConformanceClass(String definition) {
-        return conformanceClasses.computeIfAbsent(definition, t -> new ConformanceClass(definition));
-    }
-
-    private String cleanContent(String data, boolean noSpaces) {
-        String clean = StringUtils.replaceChars(data.trim(), "\n\t\r", "   ");
-        if (noSpaces) {
-            clean = RegExUtils.removeAll(clean, PATTERN_SPACE);
-        } else {
-            clean = RegExUtils.replaceAll(clean, PATTERN_SPACES, " ");
-        }
-        return clean;
-    }
-
-    private static final Pattern PATTERN_SPACES = Pattern.compile("[ ]{2,}");
-    private static final Pattern PATTERN_SPACE = Pattern.compile("([ ]+)|(\\[[^ ]+\\])");
-
-    private static class Requerement {
-
-        final String definition;
-        String description = "";
-        final Set<Image> inImage = Image.emptySet();
-        final Set<RequerementClass> inClass = new HashSet<>();
-        int refCount = -1;
-
-        public Requerement(String definition) {
-            this.definition = definition;
-            inImage.addAll(Image.imagesMatchingDef(definition));
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
-                return true;
-            }
-            if (obj == null) {
-                return false;
-            }
-            if (getClass() != obj.getClass()) {
-                return false;
-            }
-            final Requerement other = (Requerement) obj;
-            return Objects.equals(this.definition, other.definition);
-        }
-
-        @Override
-        public int hashCode() {
-            int hash = 3;
-            hash = 59 * hash + Objects.hashCode(this.definition);
-            return hash;
-        }
-
-    }
-
-    private static class Recommendation {
-
-        final String definition;
-        String description = "";
-        final Set<Image> inImage = Image.emptySet();
-        int refCount = -1;
-
-        public Recommendation(String definition) {
-            this.definition = definition;
-            inImage.addAll(Image.imagesMatchingDef(definition));
-        }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) {
-                return true;
-            }
-            if (obj == null) {
-                return false;
-            }
-            if (getClass() != obj.getClass()) {
-                return false;
-            }
-            final Requerement other = (Requerement) obj;
-            return Objects.equals(this.definition, other.definition);
-        }
-
-        @Override
-        public int hashCode() {
-            int hash = 3;
-            hash = 59 * hash + Objects.hashCode(this.definition);
-            return hash;
-        }
-
-    }
-
-    private static class RequerementClass {
-
-        final String definition;
-        String targetType;
-        String name = "'name'";
-        final List<String> dependencies = new ArrayList<>();
-        final List<String> imports = new ArrayList<>();
-        final List<Requerement> requirements = new ArrayList<>();
-        final List<Recommendation> recommendations = new ArrayList<>();
-        final Set<Image> inImage = Image.emptySet();
-        int refCount = -1;
-
-        public RequerementClass(String definition) {
-            this.definition = definition;
-            inImage.addAll(Image.imagesMatchingDef(definition));
-        }
-
-        public void addDependency(String dependency) {
-            dependencies.add(dependency);
-        }
-
-        public void addImport(String dependency) {
-            imports.add(dependency);
-        }
-
-        public void addRequirement(Requerement req) {
-            requirements.add(req);
-        }
-
-        public void addRecommendation(Recommendation rec) {
-            recommendations.add(rec);
-        }
-    }
-
-    private static class ConformanceClass {
-
-        final String definition;
-        String purpose;
-        String method;
-        String type;
-        RequerementClass requirement;
-
-        public ConformanceClass(String definition) {
-            this.definition = definition;
-        }
-
-        public void addRequirement(RequerementClass req) {
-            if (requirement != null) {
-                LOGGER.error("Conformance Class {} already has a requirement {}, overwriting with {}", definition, requirement.definition, req.definition);
-            }
-            requirement = req;
-        }
-
-    }
-
-    private static boolean matchesAnyOf(String value, Set<Pattern> patterns) {
-        for (Pattern pattern : patterns) {
-            if (pattern.matcher(value).matches()) {
-                return true;
-            }
-        }
-        return false;
-    }
 }

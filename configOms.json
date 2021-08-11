@@ -1,0 +1,18 @@
+{
+  "parser": {
+    "className": "hylke.dotgen.ParserOms",
+    "classConfig": {
+      "ignoreReqRegexes": [
+        ".*[{].*"
+      ],
+      "ignoreDepRegexes": [
+        "ISO 19103.*",
+        "ISO 19107.*",
+        "ISO 19108.*",
+        "Unified Modeling Language \\(UML\\)\\. Version 2\\.3\\. May 2010"
+      ]
+    }
+  },
+  "source": "../20-082r2.html",
+  "target": "output/OMSv3/OMSv3"
+}

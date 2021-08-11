@@ -1,15 +1,24 @@
 package hylke.dotgen;
 
+import com.google.gson.JsonElement;
+import de.fraunhofer.iosb.ilt.configurable.ConfigEditor;
+import de.fraunhofer.iosb.ilt.configurable.ConfigurationException;
+import de.fraunhofer.iosb.ilt.configurable.annotations.ConfigurableField;
+import de.fraunhofer.iosb.ilt.configurable.editor.EditorClass;
+import de.fraunhofer.iosb.ilt.configurable.editor.EditorList;
+import de.fraunhofer.iosb.ilt.configurable.editor.EditorString;
 import hylke.dotgen.model.Data;
 import hylke.dotgen.model.ConformanceClass;
 import hylke.dotgen.model.Image;
 import hylke.dotgen.model.Recommendation;
 import hylke.dotgen.model.Requerement;
 import hylke.dotgen.model.RequerementClass;
+import hylke.dotgen.model.ShortenCombo;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 import javax.xml.parsers.DocumentBuilder;
@@ -39,15 +48,38 @@ import org.xml.sax.SAXException;
  *
  * @author hylke
  */
-public class ParserSta {
+public class ParserSta implements Parser {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ParserSta.class.getName());
     private static final Pattern PATTERN_SPACES = Pattern.compile("[ ]{2,}");
     private static final Pattern PATTERN_SPACE = Pattern.compile("([ ]+)|(\\[[^ ]+\\])");
+    private static final Pattern TABLE_REQ = Pattern.compile("^Req([0-9]+):.*");
+    private static final Pattern TABLE_IGNORE = Pattern.compile("^Name|Entitytype|Operator|Function|Scenario$");
 
     private XPathExpression exprTablesList;
     private XPathExpression exprRowList;
     private XPathExpression exprCellList;
+    private XPathExpression exprHeaderList;
+
+    @ConfigurableField(editor = EditorString.class, label = "namespace", description = "Namespace is removed from definitions.")
+    @EditorString.EdOptsString()
+    private String nameSpace;
+
+    @ConfigurableField(editor = EditorList.class, label = "IgnoreReqs", description = "Regexes to requirements to ignore.")
+    @EditorList.EdOptsList(editor = EditorString.class)
+    @EditorString.EdOptsString()
+    private List<String> ignoreReqRegexes;
+
+    @ConfigurableField(editor = EditorList.class, label = "IgnoreDeps", description = "Regexes to dependencies to ignore.")
+    @EditorList.EdOptsList(editor = EditorString.class)
+    @EditorString.EdOptsString()
+    private List<String> ignoreDepRegexes;
+
+    @ConfigurableField(editor = EditorList.class, optional = true,
+            label = "Shortenings", description = "Shortenings for dependencies")
+    @EditorList.EdOptsList(editor = EditorClass.class)
+    @EditorClass.EdOptsClass(clazz = ShortenCombo.class)
+    private List<ShortenCombo> depShorenings;
 
     private final Set<Pattern> ignoreReqs = new HashSet<>();
     private final Set<Pattern> ignoreDeps = new HashSet<>();
@@ -56,8 +88,24 @@ public class ParserSta {
 
     private Data documentData;
 
+    @Override
     public Data getDocumentData() {
         return documentData;
+    }
+
+    @Override
+    public ParserSta reset() {
+        documentData = new Data(nameSpace);
+        ignoredDeps.clear();
+        return this;
+    }
+
+    @Override
+    public void configure(JsonElement config, Void context, Void edtCtx, ConfigEditor<?> configEditor) throws ConfigurationException {
+        Parser.super.configure(config, context, edtCtx, configEditor);
+        documentData = new Data(nameSpace);
+        ignoreReqRegexes.stream().forEach(t -> addIgnoreReq(t));
+        ignoreDepRegexes.stream().forEach(t -> addIgnoreDep(t));
     }
 
     public ParserSta addIgnoreReq(String regex) {
@@ -70,6 +118,16 @@ public class ParserSta {
         return this;
     }
 
+    private NodeList getCellsFromRow(Node row) throws XPathExpressionException {
+        NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
+        int colCount = cellList.getLength();
+        if (colCount != 0) {
+            return cellList;
+        }
+        return (NodeList) exprHeaderList.evaluate(row, XPathConstants.NODESET);
+    }
+
+    @Override
     public ParserSta parseSource(File sourceFile) throws IOException, ParserConfigurationException, XPathExpressionException, DOMException, SAXException {
         HtmlCleaner cleaner = new HtmlCleaner();
         CleanerProperties props = cleaner.getProperties();
@@ -89,6 +147,7 @@ public class ParserSta {
         exprTablesList = xpath.compile("//table");
         exprRowList = xpath.compile("//tr");
         exprCellList = xpath.compile("//td");
+        exprHeaderList = xpath.compile("//th");
 
         NodeList stationList = (NodeList) exprTablesList.evaluate(doc, XPathConstants.NODESET);
         int total = stationList.getLength();
@@ -99,25 +158,26 @@ public class ParserSta {
             int rowCount = rowList.getLength();
 
             Node firstRow = rowList.item(0).cloneNode(true);
-            NodeList cellList = (NodeList) exprCellList.evaluate(firstRow, XPathConstants.NODESET);
+            NodeList cellList = getCellsFromRow(firstRow);
             int colCount = cellList.getLength();
-
-            if (colCount != 2) {
+            if (colCount == 0) {
+                LOGGER.warn("    Emtpy first row, {} rows", rowCount);
                 continue;
             }
+
             Node firstCell = cellList.item(0).cloneNode(true);
             String type = cleanContent(firstCell.getTextContent(), true);
             LOGGER.debug("  Rows: {}, Cols: {}, Type: '{}'", rowCount, colCount, type);
             if ("RequirementsClass".equalsIgnoreCase(type)) {
                 parseRequirementsClassTable(rowList);
-            } else if ("RequirementsSub-class".equalsIgnoreCase(type)) {
-                parseRequirementsClassTable(rowList);
             } else if ("ConformanceClass".equalsIgnoreCase(type)) {
                 parseConformanceClassTable(rowList);
-            } else if ((type.startsWith("Requirement/req") || type.startsWith("/req") || type.startsWith("req")) && rowCount == 1) {
+            } else if (TABLE_REQ.matcher(type).matches()) {
                 parseRequirementTable(rowList);
             } else if ((type.startsWith("Recommendation/rec") || type.startsWith("/rec")) && rowCount == 1) {
                 parseRecommendationTable(rowList);
+            } else if (TABLE_IGNORE.matcher(type).matches()) {
+                // Ignore
             } else {
                 LOGGER.warn("    Unknown table type: {}, {} rows", type, rowCount);
             }
@@ -130,14 +190,35 @@ public class ParserSta {
         return this;
     }
 
+    private String getCellContent(NodeList rowList, int rowNr, int columnNr) throws XPathExpressionException {
+        Node row = rowList.item(rowNr).cloneNode(true);
+        NodeList cellList = getCellsFromRow(row);
+        Node cell = cellList.item(columnNr).cloneNode(true);
+        return cell.getTextContent();
+    }
+
+    private String checkDepReplaces(String dep) {
+        for (ShortenCombo shortenCombo : depShorenings) {
+            dep = shortenCombo.maybeReplace(dep);
+        }
+        return dep;
+    }
+
     private void parseRequirementsClassTable(NodeList rowList) throws XPathExpressionException {
-        int rowCount = rowList.getLength();
-        RequerementClass reqClass = null;
         Set<Image> mainImages = Image.emptySet();
-        for (int i = 0; i < rowCount; i++) {
+        String definition = cleanContent(getCellContent(rowList, 1, 0), true);
+        if (Utils.matchesAnyOf(definition, ignoreReqs)) {
+            return;
+        }
+        RequerementClass reqClass = documentData.findOrCreateRequirementClass(definition);
+        mainImages.addAll(Image.imagesMatchingDef(reqClass.definition));
+
+        int rowCount = rowList.getLength();
+        for (int i = 2; i < rowCount; i++) {
             Node row = rowList.item(i).cloneNode(true);
-            NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
+            NodeList cellList = getCellsFromRow(row);
             int cellCount = cellList.getLength();
+
             if (cellCount != 2) {
                 LOGGER.error("    Requirement row found with {} cells, expected 2", cellCount);
                 continue;
@@ -145,64 +226,55 @@ public class ParserSta {
             Node nameCell = cellList.item(0).cloneNode(true);
             Node valueCell = cellList.item(1).cloneNode(true);
             String name = cleanContent(nameCell.getTextContent(), true);
-            String value;
             switch (name.toLowerCase()) {
-                case "requirementsclass":
-                case "requirementssub-class":
-                    value = cleanContent(valueCell.getTextContent(), true);
-                    if (Utils.matchesAnyOf(value, ignoreReqs)) {
-                        return;
-                    }
-                    reqClass = documentData.findOrCreateRequirementClass(value);
-                    mainImages.addAll(Image.imagesMatchingDef(value));
-                    break;
-
-                case "targettype":
-                    value = cleanContent(valueCell.getTextContent(), false);
+                case "targettype": {
+                    String value = cleanContent(valueCell.getTextContent(), false);
                     reqClass.targetType = value;
                     break;
+                }
 
-                case "name":
-                    value = cleanContent(valueCell.getTextContent(), false);
+                case "type":
+                case "name": {
+                    String value = cleanContent(valueCell.getTextContent(), false);
                     reqClass.name = value;
+                    LOGGER.info("Class {} - Name {}", reqClass.definition, reqClass.name);
                     break;
+                }
 
-                case "dependency":
-                    value = cleanContent(valueCell.getTextContent(), false);
-                    if (value.startsWith("/")) {
-                        value = cleanContent(valueCell.getTextContent(), true);
+                case "dependency": {
+                    String value = cleanContent(valueCell.getTextContent(), false);
+                    if (value.isEmpty()) {
+                        continue;
                     }
-                    if (Utils.matchesAnyOf(value, ignoreDeps)) {
+                    if (value.startsWith(nameSpace)) {
+                        value = cleanContent(valueCell.getTextContent(), true);
+                        linkRequirementToClass(value, reqClass, mainImages);
+                    } else if (Utils.matchesAnyOf(value, ignoreDeps)) {
                         ignoredDeps.add(value);
                     } else {
+                        value = checkDepReplaces(value);
                         reqClass.addDependency(value);
                         documentData.checkImageForRelation(value, mainImages);
                     }
                     break;
+                }
 
-                case "imports":
-                    value = cleanContent(valueCell.getTextContent(), true);
-                    if (Utils.matchesAnyOf(value, ignoreReqs)) {
-                        continue;
-                    }
-                    documentData.findOrCreateRequirementClass(value);
-                    reqClass.addImport(value);
-                    documentData.checkImageForRelation(value, mainImages);
+                case "requirementsclass":
+                case "requirementssub-class":
+                case "imports": {
+                    String value = cleanContent(valueCell.getTextContent(), true);
+                    linkRequirementClassToClass(value, reqClass, mainImages);
                     break;
+                }
 
-                case "requirement":
-                    value = cleanContent(valueCell.getTextContent(), true);
-                    if (Utils.matchesAnyOf(value, ignoreReqs)) {
-                        continue;
-                    }
-                    Requerement req = documentData.findOrCreateRequirement(value);
-                    reqClass.addRequirement(req);
-                    req.inClass.add(reqClass);
-                    documentData.checkImageForRelation(value, mainImages);
+                case "requirement": {
+                    String value = cleanContent(valueCell.getTextContent(), true);
+                    linkRequirementToClass(value, reqClass, mainImages);
                     break;
+                }
 
-                case "recommendation":
-                    value = cleanContent(valueCell.getTextContent(), true);
+                case "recommendation": {
+                    String value = cleanContent(valueCell.getTextContent(), true);
                     if (Utils.matchesAnyOf(value, ignoreReqs)) {
                         continue;
                     }
@@ -210,12 +282,35 @@ public class ParserSta {
                     reqClass.addRecommendation(rec);
                     documentData.checkImageForRelation(value, mainImages);
                     break;
+                }
 
-                default:
-                    value = cleanContent(valueCell.getTextContent(), false);
+                default: {
+                    String value = cleanContent(valueCell.getTextContent(), false);
                     LOGGER.warn("Unknown row: {} - {}", name, value);
+                }
             }
         }
+    }
+
+    private void linkRequirementToClass(String value, RequerementClass reqClass, Set<Image> mainImages) {
+        if (Utils.matchesAnyOf(value, ignoreReqs)) {
+            return;
+        }
+        Requerement req = documentData.findOrCreateRequirement(value);
+        reqClass.addRequirement(req);
+        req.inClass.add(reqClass);
+        documentData.checkImageForRelation(value, mainImages);
+        return;
+    }
+
+    private void linkRequirementClassToClass(String value, RequerementClass reqClass, Set<Image> mainImages) {
+        if (Utils.matchesAnyOf(value, ignoreReqs)) {
+            return;
+        }
+        RequerementClass importedReq = documentData.findOrCreateRequirementClass(value);
+        reqClass.addImport(importedReq);
+        documentData.checkImageForRelation(importedReq.definition, mainImages);
+        return;
     }
 
     private void parseConformanceClassTable(NodeList rowList) throws XPathExpressionException {
@@ -274,34 +369,13 @@ public class ParserSta {
     }
 
     private void parseRequirementTable(NodeList rowList) throws XPathExpressionException {
-        int rowCount = rowList.getLength();
-        if (rowCount > 1) {
-            LOGGER.warn("Requirements Table with multiple rows found");
+        String definition = cleanContent(getCellContent(rowList, 2, 0), true);
+        if (Utils.matchesAnyOf(definition, ignoreReqs)) {
+            return;
         }
-        for (int i = 0; i < rowCount; i++) {
-            Node row = rowList.item(i).cloneNode(true);
-            NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
-            int cellCount = cellList.getLength();
-            if (cellCount != 2) {
-                LOGGER.error("Requirement row found with {} cells, expected 2", cellCount);
-                continue;
-            }
-            Node defCell = cellList.item(0).cloneNode(true);
-            Node descCell = cellList.item(1).cloneNode(true);
-            String def = cleanContent(defCell.getTextContent(), true);
-            if (def.startsWith("Requirement")) {
-                def = def.substring("Requirement".length());
-            }
-            if (Utils.matchesAnyOf(def, ignoreReqs)) {
-                continue;
-            }
-            String desc = cleanContent(descCell.getTextContent(), false);
-            Requerement req = documentData.findOrCreateRequirement(def);
-            if (!req.description.isEmpty()) {
-                LOGGER.warn("Requirement {} already has a description: {}", def, req.description);
-            }
-            req.description = desc;
-        }
+        Requerement req = documentData.findOrCreateRequirement(definition);
+        String description = cleanContent(getCellContent(rowList, 1, 0), true);
+        req.description = description;
     }
 
     private void parseRecommendationTable(NodeList rowList) throws XPathExpressionException {

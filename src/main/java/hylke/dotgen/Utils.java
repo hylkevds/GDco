@@ -22,4 +22,7 @@ public class Utils {
         return false;
     }
 
+    public static boolean isNullOrEmpty(String value) {
+        return de.fraunhofer.iosb.ilt.configurable.Utils.isNullOrEmpty(value);
+    }
 }

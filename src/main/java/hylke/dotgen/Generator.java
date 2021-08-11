@@ -1,5 +1,10 @@
 package hylke.dotgen;
 
+import de.fraunhofer.iosb.ilt.configurable.AnnotatedConfigurable;
+import de.fraunhofer.iosb.ilt.configurable.annotations.ConfigurableClass;
+import de.fraunhofer.iosb.ilt.configurable.annotations.ConfigurableField;
+import de.fraunhofer.iosb.ilt.configurable.editor.EditorString;
+import de.fraunhofer.iosb.ilt.configurable.editor.EditorSubclass;
 import hylke.dotgen.model.Data;
 import hylke.dotgen.model.ConformanceClass;
 import hylke.dotgen.model.Recommendation;
@@ -11,7 +16,6 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.TreeMap;
-import java.util.regex.Pattern;
 import javax.xml.parsers.ParserConfigurationException;
 import javax.xml.xpath.XPathExpressionException;
 import org.apache.commons.io.FileUtils;
@@ -24,7 +28,8 @@ import org.xml.sax.SAXException;
  *
  * @author hylke
  */
-public class Generator {
+@ConfigurableClass
+public class Generator implements AnnotatedConfigurable<Void, Void> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Generator.class.getName());
     private static final String DATE_MODIFIED = "2021-07-08";
@@ -33,10 +38,25 @@ public class Generator {
     private static final String DATE_SUBMITTED = "2021-07-08";
     private static final String DATE_ACCEPTED = "2099-08-02";
 
-    private final String source;
-    private final String target;
+    @ConfigurableField(editor = EditorString.class,
+            label = "Source", description = "The source file to parse.")
+    @EditorString.EdOptsString(dflt = "../20-082r2.html")
+    private String source;
 
-    private Data documentData = new Data();
+    @ConfigurableField(editor = EditorString.class,
+            label = "Target", description = "The target file prefix.")
+    @EditorString.EdOptsString(dflt = "output/OMSv3/OMSv3")
+    private String target;
+
+    @ConfigurableField(editor = EditorSubclass.class,
+            label = "Parser", description = "The class used to parse the document")
+    @EditorSubclass.EdOptsSubclass(iface = Parser.class)
+    private Parser parser;
+
+    private Data documentData;
+
+    public Generator() {
+    }
 
     public Generator(String source, String target) {
         this.source = source;
@@ -48,12 +68,7 @@ public class Generator {
         LOGGER.info(" Output to: {}", target);
         File sourceFile = new File(source);
 
-        documentData = new ParserOms()
-                .addIgnoreReq(".*[{].*")
-                .addIgnoreDep("ISO 19103.*")
-                .addIgnoreDep("ISO 19107.*")
-                .addIgnoreDep("ISO 19108.*")
-                .addIgnoreDep(Pattern.quote("Unified Modeling Language (UML). Version 2.3. May 2010"))
+        documentData = parser
                 .parseSource(sourceFile)
                 .getDocumentData();
 
@@ -152,8 +167,8 @@ public class Generator {
             for (Requerement req : reqClass.requirements) {
                 sb.append("    spec:normativeStatement <http://www.opengis.net/spec/OMS/3.0").append(req.definition).append("> ;\n");
             }
-            for (String imprt : reqClass.imports) {
-                sb.append("    skos:broader <http://www.opengis.net/spec/OMS/3.0").append(imprt).append("> ;\n");
+            for (RequerementClass imprt : reqClass.imports) {
+                sb.append("    skos:broader <http://www.opengis.net/spec/OMS/3.0").append(imprt.definition).append("> ;\n");
             }
             sb.append("    skos:definition \"").append(reqClass.definition).append("\" ;\n")
                     .append("    skos:inScheme <http://www.opengis.net/spec/OMS/3.0> ;\n")
@@ -223,7 +238,6 @@ public class Generator {
                 .append("    <tr><th colspan=\"3\">Requirements</th></tr>\n")
                 .append("    <tr><th>#</th><th>definition</th><th>description</th></tr>\n");
         for (Requerement req : documentData.getRequirements().values()) {
-            String name = req.definition.substring(1 + req.definition.lastIndexOf('/'));
             sb.append("    ")
                     .append("<tr>")
                     .append("<td>").append(req.refCount).append("</td>")
@@ -253,9 +267,11 @@ public class Generator {
             sb.append("    ")
                     .append("<tr>")
                     .append("<td>").append(confCls.refCount).append("</td>")
-                    .append("<td class='def'>").append(confCls.definition).append("</td>")
-                    .append("<td>").append(confCls.name).append("</td>")
-                    .append("<td>").append(confCls.targetType).append("</td>")
+                    .append("<td class='def'>").append(confCls.definition).append("</td>");
+            if (!confCls.name.isEmpty()) {
+                sb.append("<td>").append(confCls.name).append("</td>");
+            }
+            sb.append("<td>").append(confCls.targetType).append("</td>")
                     .append("</tr>\n");
         }
         sb.append("  </table>\n");
@@ -296,8 +312,8 @@ public class Generator {
         for (Recommendation rec : mainClass.recommendations) {
             reccs.put(rec.definition, rec);
         }
-        for (String imprt : mainClass.imports) {
-            RequerementClass imprtCls = documentData.findOrCreateRequirementClass(imprt);
+        for (RequerementClass imprt : mainClass.imports) {
+            RequerementClass imprtCls = documentData.findOrCreateRequirementClass(imprt.definition);
             gatherFrom(imprtCls, classes, reqs, reccs);
         }
     }
@@ -380,11 +396,11 @@ public class Generator {
                             .append("[style=dotted];\n");
                 }
             }
-            for (String dep : rq.imports) {
+            for (RequerementClass dep : rq.imports) {
                 sb.append("      ")
                         .append('"').append(rq.definition).append('"')
                         .append(" -> ")
-                        .append('"').append(dep).append('"')
+                        .append('"').append(dep.definition).append('"')
                         .append("[style=dashed];\n");
             }
             if (!classesOnly) {

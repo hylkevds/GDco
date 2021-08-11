@@ -1,0 +1,18 @@
+{
+  "parser": {
+    "className": "hylke.dotgen.ParserSta",
+    "classConfig": {
+      "depShorenings": [
+        {
+          "start": "http://docs.oasis-open.org/odata/odata/v4.0/errata02/os/complete/part1-protocol/odata-v4.0-errata02-os-part1-protocol-complete.html",
+          "replace": "[ODATA protocol v4]"
+        }
+      ],
+      "ignoreReqRegexes": [],
+      "nameSpace": "http://www.opengis.net/spec/iot_sensing",
+      "ignoreDepRegexes": []
+    }
+  },
+  "source": "../18-088.html",
+  "target": "output/STAv1.1/STAv1.1"
+}

@@ -1,5 +1,11 @@
 package hylke.dotgen;
 
+import com.google.gson.JsonElement;
+import de.fraunhofer.iosb.ilt.configurable.ConfigEditor;
+import de.fraunhofer.iosb.ilt.configurable.ConfigurationException;
+import de.fraunhofer.iosb.ilt.configurable.annotations.ConfigurableField;
+import de.fraunhofer.iosb.ilt.configurable.editor.EditorList;
+import de.fraunhofer.iosb.ilt.configurable.editor.EditorString;
 import hylke.dotgen.model.Data;
 import hylke.dotgen.model.ConformanceClass;
 import hylke.dotgen.model.Image;
@@ -10,6 +16,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
 import javax.xml.parsers.DocumentBuilder;
@@ -39,7 +46,7 @@ import org.xml.sax.SAXException;
  *
  * @author hylke
  */
-public class ParserOms {
+public class ParserOms implements Parser {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ParserOms.class.getName());
     private static final Pattern PATTERN_SPACES = Pattern.compile("[ ]{2,}");
@@ -49,15 +56,45 @@ public class ParserOms {
     private XPathExpression exprRowList;
     private XPathExpression exprCellList;
 
+    @ConfigurableField(editor = EditorString.class, label = "namespace", description = "Namespace is removed from definitions.")
+    @EditorString.EdOptsString()
+    private String nameSpace;
+
+    @ConfigurableField(editor = EditorList.class, label = "IgnoreReqs", description = "Regexes to requirements to ignore.")
+    @EditorList.EdOptsList(editor = EditorString.class)
+    @EditorString.EdOptsString()
+    private List<String> ignoreReqRegexes;
+
+    @ConfigurableField(editor = EditorList.class, label = "IgnoreDeps", description = "Regexes to dependencies to ignore.")
+    @EditorList.EdOptsList(editor = EditorString.class)
+    @EditorString.EdOptsString()
+    private List<String> ignoreDepRegexes;
+
     private final Set<Pattern> ignoreReqs = new HashSet<>();
     private final Set<Pattern> ignoreDeps = new HashSet<>();
 
     private final Set<String> ignoredDeps = new HashSet<>();
 
-    private Data documentData = new Data();
+    private Data documentData;
 
+    @Override
     public Data getDocumentData() {
         return documentData;
+    }
+
+    @Override
+    public ParserOms reset() {
+        documentData = new Data(nameSpace);
+        ignoredDeps.clear();
+        return this;
+    }
+
+    @Override
+    public void configure(JsonElement config, Void context, Void edtCtx, ConfigEditor<?> configEditor) throws ConfigurationException {
+        Parser.super.configure(config, context, edtCtx, configEditor);
+        documentData = new Data(nameSpace);
+        ignoreReqRegexes.stream().forEach(t -> addIgnoreReq(t));
+        ignoreDepRegexes.stream().forEach(t -> addIgnoreDep(t));
     }
 
     public ParserOms addIgnoreReq(String regex) {
@@ -70,6 +107,7 @@ public class ParserOms {
         return this;
     }
 
+    @Override
     public ParserOms parseSource(File sourceFile) throws IOException, ParserConfigurationException, XPathExpressionException, DOMException, SAXException {
         HtmlCleaner cleaner = new HtmlCleaner();
         CleanerProperties props = cleaner.getProperties();
@@ -102,9 +140,6 @@ public class ParserOms {
             NodeList cellList = (NodeList) exprCellList.evaluate(firstRow, XPathConstants.NODESET);
             int colCount = cellList.getLength();
 
-            if (colCount != 2) {
-                continue;
-            }
             Node firstCell = cellList.item(0).cloneNode(true);
             String type = cleanContent(firstCell.getTextContent(), true);
             LOGGER.debug("  Rows: {}, Cols: {}, Type: '{}'", rowCount, colCount, type);
@@ -185,8 +220,8 @@ public class ParserOms {
                     if (Utils.matchesAnyOf(value, ignoreReqs)) {
                         continue;
                     }
-                    documentData.findOrCreateRequirementClass(value);
-                    reqClass.addImport(value);
+                    RequerementClass importedReq = documentData.findOrCreateRequirementClass(value);
+                    reqClass.addImport(importedReq);
                     documentData.checkImageForRelation(value, mainImages);
                     break;
 
@@ -276,7 +311,7 @@ public class ParserOms {
     private void parseRequirementTable(NodeList rowList) throws XPathExpressionException {
         int rowCount = rowList.getLength();
         if (rowCount > 1) {
-            LOGGER.warn("Requirements Table with multiple rows found");
+            LOGGER.warn("Requirements Table with {} rows found", rowCount);
         }
         for (int i = 0; i < rowCount; i++) {
             Node row = rowList.item(i).cloneNode(true);

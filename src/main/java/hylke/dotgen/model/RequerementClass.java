@@ -12,9 +12,9 @@ public class RequerementClass implements Comparable<RequerementClass> {
 
     public final String definition;
     public String targetType;
-    public String name = "'name'";
+    public String name = "";
     public final List<String> dependencies = new ArrayList<>();
-    public final List<String> imports = new ArrayList<>();
+    public final List<RequerementClass> imports = new ArrayList<>();
     public final List<Requerement> requirements = new ArrayList<>();
     public final List<Recommendation> recommendations = new ArrayList<>();
     public final Set<Image> inImage = Image.emptySet();
@@ -29,7 +29,7 @@ public class RequerementClass implements Comparable<RequerementClass> {
         dependencies.add(dependency);
     }
 
-    public void addImport(String dependency) {
+    public void addImport(RequerementClass dependency) {
         imports.add(dependency);
     }
 

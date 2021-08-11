@@ -4,6 +4,8 @@ OUTPUT='OMSv3'
 
 java -jar target/DotGen-1.0-SNAPSHOT-jar-with-dependencies.jar configOms.json
 echo "Step 2: Dot"
+mkdir -p output/${OUTPUT}/svg
+mkdir -p output/${OUTPUT}/png
 cd output/${OUTPUT}
 for i in *.dot;
   do
@@ -13,3 +15,4 @@ for i in *.dot;
   done
 cd ../..
 echo "Step 4: Done"
+

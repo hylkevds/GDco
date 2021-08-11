@@ -32,11 +32,41 @@ import org.xml.sax.SAXException;
 public class Generator implements AnnotatedConfigurable<Void, Void> {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(Generator.class.getName());
-    private static final String DATE_MODIFIED = "2021-07-08";
-    private static final String DATE_CREATED = "2021-07-08";
-    private static final String DATE_APPROVED = "2021-12-20";
-    private static final String DATE_SUBMITTED = "2021-07-08";
-    private static final String DATE_ACCEPTED = "2099-08-02";
+
+    @ConfigurableField(editor = EditorString.class,
+            label = "Date Modified", description = "The date the doc was last modified")
+    @EditorString.EdOptsString(dflt = "1990-01-01")
+    private String dateModified;
+
+    @ConfigurableField(editor = EditorString.class,
+            label = "Date Created", description = "The date the doc was last modified")
+    @EditorString.EdOptsString(dflt = "1990-01-01")
+    private String dateCreated;
+
+    @ConfigurableField(editor = EditorString.class,
+            label = "Date Approved", description = "The date the doc was last modified")
+    @EditorString.EdOptsString(dflt = "1990-01-01")
+    private String dateApproved;
+
+    @ConfigurableField(editor = EditorString.class,
+            label = "Date Submitted", description = "The date the doc was last modified")
+    @EditorString.EdOptsString(dflt = "1990-01-01")
+    private String dateSubmitted;
+
+    @ConfigurableField(editor = EditorString.class,
+            label = "Date Accepted", description = "The date the doc was last modified")
+    @EditorString.EdOptsString(dflt = "1990-01-01")
+    private String dateAccepted;
+
+    @ConfigurableField(editor = EditorString.class,
+            label = "Doc Identifier", description = "Doc Identifier.")
+    @EditorString.EdOptsString(dflt = "http://www.opengis.net/doc/is/OMS/3.0")
+    private String identifierDoc;
+
+    @ConfigurableField(editor = EditorString.class,
+            label = "Spec Identifier", description = "Doc Identifier.")
+    @EditorString.EdOptsString(dflt = "http://www.opengis.net/spec/OMS/3.0")
+    private String identifierSpec;
 
     @ConfigurableField(editor = EditorString.class,
             label = "Source", description = "The source file to parse.")
@@ -111,9 +141,9 @@ public class Generator implements AnnotatedConfigurable<Void, Void> {
                 .append("\n")
                 .append("<http://www.opengis.net/def/docs/20-082r2> a spec:Specification ;\n")
                 .append("    dcterms:creator \"Kathi Schleidt\" ;\n")
-                .append("    dcterms:dateAccepted \"").append(DATE_ACCEPTED).append("\"^^xsd:date ;\n")
-                .append("    dcterms:dateSubmitted \"").append(DATE_SUBMITTED).append("\"^^xsd:date ;\n")
-                .append("    dcterms:identifier \"http://www.opengis.net/doc/is/OMS/3.0\" ;\n")
+                .append("    dcterms:dateAccepted \"").append(dateAccepted).append("\"^^xsd:date ;\n")
+                .append("    dcterms:dateSubmitted \"").append(dateSubmitted).append("\"^^xsd:date ;\n")
+                .append("    dcterms:identifier \"").append(identifierDoc).append("\" ;\n")
                 .append("    reg:status reg:statusValid ;\n")
                 .append("    na:doctype ogcdt:ip ;\n")
                 .append("    spec:authority \"Open Geospatial Consortium\" ;\n");
@@ -125,10 +155,10 @@ public class Generator implements AnnotatedConfigurable<Void, Void> {
             } else {
                 sb.append(",\n		");
             }
-            sb.append("<http://www.opengis.net/spec/OMS/3.0").append(confClass.definition).append(">");
+            sb.append("<").append(identifierSpec).append(confClass.definition).append(">");
         }
         sb.append(" ;\n")
-                .append("    spec:date \"").append(DATE_APPROVED).append("\"^^xsd:date ;\n")
+                .append("    spec:date \"").append(dateApproved).append("\"^^xsd:date ;\n")
                 .append("    specrel:implementation <http://www.opengis.net/def/docs/20-082r2> ;\n")
                 .append("    skos:notation \"20-082r2\"^^na:doc_no ;\n")
                 .append("    skos:prefLabel \"OGC® Abstract Specification Topic 20 - Observations and measurements\" ;\n")
@@ -140,38 +170,38 @@ public class Generator implements AnnotatedConfigurable<Void, Void> {
         // Conformance Tests
         for (Requerement req : documentData.getRequirements().values()) {
             String confTestDef = req.definition.replace("/req/", "/conf/");
-            sb.append("<http://www.opengis.net/spec/OMS/3.0").append(confTestDef).append("> a spec:ConformanceTest,\n")
+            sb.append("<").append(identifierSpec).append(confTestDef).append("> a spec:ConformanceTest,\n")
                     .append("        skos:Concept ;\n")
                     .append("    spec:method \"Inspect the documentation of the application, schema or profile.\" ;\n")
                     .append("    spec:purpose \"Verify that all requirements from the requirements class have been fulfilled.\" ;\n")
-                    .append("    spec:requirement <http://www.opengis.net/spec/OMS/3.0").append(req.definition).append("> ;\n")
+                    .append("    spec:requirement <").append(identifierSpec).append(req.definition).append("> ;\n")
                     .append("    spec:testType spec:Capabilities ;\n");
             for (RequerementClass reqClass : req.inClass) {
-                sb.append("    skos:broader <http://www.opengis.net/spec/OMS/3.0")
+                sb.append("    skos:broader <").append(identifierSpec)
                         .append(reqClass.definition.replace("/req/", "/conf/"))
                         .append("> ;\n");
             }
-            //                    .append("    skos:broader <http://www.opengis.net/spec/OMS/3.0/conf/obs-cpt/Observation> ;\n")
-            //                    .append("    skos:broader <http://www.opengis.net/spec/OMS/3.0/conf/obs-core/AbstractObservation> ;\n")
+            //                    .append("    skos:broader <").append(identifierSpec).append("/conf/obs-cpt/Observation> ;\n")
+            //                    .append("    skos:broader <").append(identifierSpec).append("/conf/obs-core/AbstractObservation> ;\n")
             sb.append("    skos:definition \"Verify that all requirements from the requirements class have been fulfilled.\" ;\n")
-                    .append("    skos:inScheme <http://www.opengis.net/spec/OMS/3.0> ;\n")
-                    .append("    skos:prefLabel \"Conformance Test http://www.opengis.net/spec/OMS/3.0").append(req.definition).append("\" .")
+                    .append("    skos:inScheme <").append(identifierSpec).append("> ;\n")
+                    .append("    skos:prefLabel \"Conformance Test ").append(identifierSpec).append(req.definition).append("\" .")
                     .append("\n\n");
         }
         sb.append("\n\n\n");
 
         // RequirementClasses
         for (RequerementClass reqClass : documentData.getRequirementClasses().values()) {
-            sb.append("<http://www.opengis.net/spec/OMS/3.0").append(reqClass.definition).append("> a spec:RequirementClass,\n")
+            sb.append("<").append(identifierSpec).append(reqClass.definition).append("> a spec:RequirementClass,\n")
                     .append("        skos:Concept ;\n");
             for (Requerement req : reqClass.requirements) {
-                sb.append("    spec:normativeStatement <http://www.opengis.net/spec/OMS/3.0").append(req.definition).append("> ;\n");
+                sb.append("    spec:normativeStatement <").append(identifierSpec).append(req.definition).append("> ;\n");
             }
             for (RequerementClass imprt : reqClass.imports) {
-                sb.append("    skos:broader <http://www.opengis.net/spec/OMS/3.0").append(imprt.definition).append("> ;\n");
+                sb.append("    skos:broader <").append(identifierSpec).append(imprt.definition).append("> ;\n");
             }
             sb.append("    skos:definition \"").append(reqClass.definition).append("\" ;\n")
-                    .append("    skos:inScheme <http://www.opengis.net/spec/OMS/3.0> ;\n")
+                    .append("    skos:inScheme <").append(identifierSpec).append("> ;\n")
                     .append("    skos:prefLabel \"Requirement Class ").append(reqClass.definition).append("\" .")
                     .append("\n\n");
         }
@@ -179,14 +209,14 @@ public class Generator implements AnnotatedConfigurable<Void, Void> {
 
         // Requirements
         for (Requerement req : documentData.getRequirements().values()) {
-            sb.append("<http://www.opengis.net/spec/OMS/3.0").append(req.definition).append("> a spec:Requirement,\n")
+            sb.append("<").append(identifierSpec).append(req.definition).append("> a spec:Requirement,\n")
                     .append("        skos:Concept ;\n")
                     .append("    dcterms:description \"").append(req.description.replaceAll("[\"]", "\\\"")).append("\" ;\n");
             for (RequerementClass reqClass : req.inClass) {
-                sb.append("    skos:broader <http://www.opengis.net/spec/OMS/3.0").append(reqClass.definition).append("> ;\n");
+                sb.append("    skos:broader <").append(identifierSpec).append(reqClass.definition).append("> ;\n");
             }
             sb.append("    skos:definition \"").append(req.description).append("\" ;\n")
-                    .append("    skos:inScheme <http://www.opengis.net/spec/OMS/3.0> ;\n")
+                    .append("    skos:inScheme <").append(identifierSpec).append("> ;\n")
                     .append("    skos:prefLabel \"Requirement: ").append(req.definition).append("\" .")
                     .append("\n\n");
         }
@@ -194,30 +224,30 @@ public class Generator implements AnnotatedConfigurable<Void, Void> {
 
         // Conformance Classes
         for (ConformanceClass confClass : documentData.getConformanceClasses().values()) {
-            sb.append("<http://www.opengis.net/spec/OMS/3.0").append(confClass.definition).append("> a spec:ConformanceClass,\n")
+            sb.append("<").append(identifierSpec).append(confClass.definition).append("> a spec:ConformanceClass,\n")
                     .append("        skos:Concept ;\n")
                     .append("    skos:definition \"").append(confClass.definition).append("\" ;\n")
-                    .append("    skos:inScheme <http://www.opengis.net/spec/OMS/3.0> ;\n")
+                    .append("    skos:inScheme <").append(identifierSpec).append("> ;\n")
                     .append("    skos:prefLabel \"Conformance Class ").append(confClass.definition).append("\" ;\n")
-                    .append("    skos:topConceptOf <http://www.opengis.net/spec/OMS/3.0> .")
+                    .append("    skos:topConceptOf <").append(identifierSpec).append("> .")
                     .append("\n\n");
         }
         sb.append("\n\n\n");
 
-        sb.append("<http://www.opengis.net/spec/OMS/3.0> a skos:ConceptScheme ;\n")
-                .append("    dcterms:created \"").append(DATE_CREATED).append("\"^^xsd:date ;\n")
-                .append("    dcterms:modified \"").append(DATE_MODIFIED).append("\"^^xsd:date ;\n")
+        sb.append("<").append(identifierSpec).append("> a skos:ConceptScheme ;\n")
+                .append("    dcterms:created \"").append(dateCreated).append("\"^^xsd:date ;\n")
+                .append("    dcterms:modified \"").append(dateModified).append("\"^^xsd:date ;\n")
                 .append("    dcterms:source <http://www.opengis.net/def/docs/20-082r2> ;\n")
                 .append("    skos:definition \"A convenience hierarchy for navigating the elements of a specification using the SKOS model\" ;\n")
-                .append("    skos:hasTopConcept <http://www.opengis.net/spec/OMS/3.0/conf/obs-cpt>,\n")
-                .append("		<http://www.opengis.net/spec/OMS/3.0/conf/obs-core>,\n")
-                .append("		<http://www.opengis.net/spec/OMS/3.0/conf/obs-basic>,\n")
-                .append("		<http://www.opengis.net/spec/OMS/3.0/conf/obs-cpt/Observation>,\n")
-                .append("		<http://www.opengis.net/spec/OMS/3.0/conf/obs-core/AbstractObservationCharacteristics>,\n")
-                .append("		<http://www.opengis.net/spec/OMS/3.0/conf/obs-core/AbstractObservation>,\n")
-                .append("		<http://www.opengis.net/spec/OMS/3.0/conf/obs-basic/ObservationCharacteristics>,\n")
-                .append("		<http://www.opengis.net/spec/OMS/3.0/conf/obs-basic/Observation>,\n")
-                .append("		<http://www.opengis.net/spec/OMS/3.0/conf/obs-basic/ObservingCapability> ;\n")
+                .append("    skos:hasTopConcept <").append(identifierSpec).append("/conf/obs-cpt>,\n")
+                .append("		<").append(identifierSpec).append("/conf/obs-core>,\n")
+                .append("		<").append(identifierSpec).append("/conf/obs-basic>,\n")
+                .append("		<").append(identifierSpec).append("/conf/obs-cpt/Observation>,\n")
+                .append("		<").append(identifierSpec).append("/conf/obs-core/AbstractObservationCharacteristics>,\n")
+                .append("		<").append(identifierSpec).append("/conf/obs-core/AbstractObservation>,\n")
+                .append("		<").append(identifierSpec).append("/conf/obs-basic/ObservationCharacteristics>,\n")
+                .append("		<").append(identifierSpec).append("/conf/obs-basic/Observation>,\n")
+                .append("		<").append(identifierSpec).append("/conf/obs-basic/ObservingCapability> ;\n")
                 .append("    skos:prefLabel \"Specification elements for OGC 20-082r2 Observations, Measurements and Samples\" .");
 
         FileUtils.write(targetFile, sb, StandardCharsets.UTF_8);

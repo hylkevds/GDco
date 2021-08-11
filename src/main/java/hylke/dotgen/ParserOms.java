@@ -174,7 +174,7 @@ public class ParserOms implements Parser {
             NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
             int cellCount = cellList.getLength();
             if (cellCount != 2) {
-                LOGGER.error("    Requirement row found with {} cells, expected 2", cellCount);
+                LOGGER.error("    Requirement row found with {} cells, expected 2 ({} ; {})", cellCount, getCleanCell(cellList, 0, true), getCleanCell(cellList, 1, true));
                 continue;
             }
             Node nameCell = cellList.item(0).cloneNode(true);
@@ -253,6 +253,10 @@ public class ParserOms implements Parser {
         }
     }
 
+    private String getCleanCell(NodeList cellList, int idx, boolean noSpaces) throws DOMException {
+        return cleanContent(cellList.item(idx).cloneNode(true).getTextContent(), noSpaces);
+    }
+
     private void parseConformanceClassTable(NodeList rowList) throws XPathExpressionException {
         int rowCount = rowList.getLength();
         ConformanceClass confClass = null;
@@ -260,8 +264,12 @@ public class ParserOms implements Parser {
             Node row = rowList.item(i).cloneNode(true);
             NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
             int cellCount = cellList.getLength();
+            if (cellCount == 3) {
+                LOGGER.debug("    Conformance row found with {} cells, expected 2 ({} ; {})", cellCount, getCleanCell(cellList, 0, true), getCleanCell(cellList, 1, true));
+                continue;
+            }
             if (cellCount != 2) {
-                LOGGER.error("    Requirement row found with {} cells, expected 2", cellCount);
+                LOGGER.error("    Conformance row found with {} cells, expected 2 ({} ; {})", cellCount, getCleanCell(cellList, 0, true), getCleanCell(cellList, 1, true));
                 continue;
             }
             Node nameCell = cellList.item(0).cloneNode(true);
@@ -318,7 +326,7 @@ public class ParserOms implements Parser {
             NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
             int cellCount = cellList.getLength();
             if (cellCount != 2) {
-                LOGGER.error("Requirement row found with {} cells, expected 2", cellCount);
+                LOGGER.error("    Requirement row found with {} cells, expected 2 ({} ; {})", cellCount, getCleanCell(cellList, 0, true), getCleanCell(cellList, 1, true));
                 continue;
             }
             Node defCell = cellList.item(0).cloneNode(true);

@@ -103,11 +103,9 @@ public class Generator implements AnnotatedConfigurable<Void, Void> {
                 .getDocumentData();
 
         for (Image image : Image.values()) {
-            File targetFileFull = new File(target + "_" + image.name().toLowerCase() + ".dot");
-            generateDot(image, targetFileFull, false);
-            File targetFileClass = new File(target + "_" + image.name().toLowerCase() + "_cls.dot");
-            generateDot(image, targetFileClass, true);
+            generateDot(image);
         }
+        generateDot(null);
 
         for (RequerementClass reqClass : documentData.getRequirementClasses().values()) {
             File targetFileFull = new File(target + "_" + StringUtils.replace(reqClass.definition, "/", "_") + ".dot");
@@ -248,7 +246,8 @@ public class Generator implements AnnotatedConfigurable<Void, Void> {
                 .append("		<").append(identifierSpec).append("/conf/obs-basic/ObservationCharacteristics>,\n")
                 .append("		<").append(identifierSpec).append("/conf/obs-basic/Observation>,\n")
                 .append("		<").append(identifierSpec).append("/conf/obs-basic/ObservingCapability> ;\n")
-                .append("    skos:prefLabel \"Specification elements for OGC 20-082r2 Observations, Measurements and Samples\" .");
+                .append("    skos:prefLabel \"Specification elements for OGC 20-082r2 Observations, Measurements and Samples\" .")
+                .append("\n\n");
 
         FileUtils.write(targetFile, sb, StandardCharsets.UTF_8);
     }
@@ -346,6 +345,14 @@ public class Generator implements AnnotatedConfigurable<Void, Void> {
             RequerementClass imprtCls = documentData.findOrCreateRequirementClass(imprt.definition);
             gatherFrom(imprtCls, classes, reqs, reccs);
         }
+    }
+
+    private void generateDot(Image image) throws IOException {
+        final String name = image == null ? "all" : image.name().toLowerCase();
+        File targetFileFull = new File(target + "_" + name + ".dot");
+        generateDot(image, targetFileFull, false);
+        File targetFileClass = new File(target + "_" + name + "_cls.dot");
+        generateDot(image, targetFileClass, true);
     }
 
     private void generateDot(Image image, File targetFile, boolean classesOnly) throws IOException {

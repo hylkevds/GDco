@@ -3,12 +3,16 @@ package hylke.dotgen.model;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  *
  * @author hylke
  */
 public class Data {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(Data.class.getName());
 
     private final String nameSpace;
     private final Map<String, Requerement> requirements = new TreeMap<>();
@@ -42,6 +46,7 @@ public class Data {
         }
         final Requerement item = requirements.computeIfAbsent(definition, t -> new Requerement(t));
         item.refCount++;
+        LOGGER.trace("    Req {}: {}", item.refCount, definition);
         return item;
     }
 
@@ -51,6 +56,7 @@ public class Data {
         }
         final Recommendation item = recommendations.computeIfAbsent(definition, t -> new Recommendation(t));
         item.refCount++;
+        LOGGER.trace("    Rec {}: {}", item.refCount, definition);
         return item;
     }
 
@@ -60,6 +66,7 @@ public class Data {
         }
         final RequerementClass item = requirementClasses.computeIfAbsent(definition, t -> new RequerementClass(t));
         item.refCount++;
+        LOGGER.trace("    Cls {}: {}", item.refCount, definition);
         return item;
     }
 

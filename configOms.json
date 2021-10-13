@@ -1,10 +1,13 @@
 {
+  "dateCreated": "2021-08-11",
+  "identifierSpec": "http://www.opengis.net/spec/OMS/3.0",
   "parser": {
     "className": "hylke.dotgen.ParserOms",
     "classConfig": {
       "ignoreReqRegexes": [
         ".*[{].*"
       ],
+      "nameSpace": "",
       "ignoreDepRegexes": [
         "ISO 19103.*",
         "ISO 19107.*",
@@ -13,6 +16,11 @@
       ]
     }
   },
-  "source": "../20-082r2.html",
+  "dateApproved": "2021-01-01",
+  "dateAccepted": "2021-01-01",
+  "dateModified": "2021-08-11",
+  "identifierDoc": "http://www.opengis.net/doc/is/OMS/3.0",
+  "source": "../20-082r2_OGC_Abstract_Specification_Topic_20_-_Observations_and_measurements_21.10.13.htm",
+  "dateSubmitted": "2021-01-01",
   "target": "output/OMSv3/OMSv3"
 }

@@ -27,6 +27,7 @@ import javax.xml.xpath.XPathConstants;
 import javax.xml.xpath.XPathExpression;
 import javax.xml.xpath.XPathExpressionException;
 import javax.xml.xpath.XPathFactory;
+import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.RegExUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -111,10 +112,16 @@ public class ParserOms implements Parser {
     public ParserOms parseSource(File sourceFile) throws IOException, ParserConfigurationException, XPathExpressionException, DOMException, SAXException {
         HtmlCleaner cleaner = new HtmlCleaner();
         CleanerProperties props = cleaner.getProperties();
-        LOGGER.info("Cleaning input...");
-        TagNode clean = cleaner.clean(sourceFile);
-        LOGGER.info("Writing clean input...");
+        String dirtyString = FileUtils.readFileToString(sourceFile, StandardCharsets.ISO_8859_1);
+        LOGGER.info("Cleaning input, size {} ...", dirtyString.length());
+        // Strip embedded graphics from MS Word.
+        dirtyString = dirtyString.replaceAll("o:gfxdata=\"[^\"]+\"", "");
+        // Bookmarks cause problems in tables when cleaning.
+        dirtyString = dirtyString.replaceAll("<span style='mso-bookmark:_Toc[0-9]+'></span>", "");
+        TagNode clean = cleaner.clean(dirtyString);
         String cleanString = new PrettyXmlSerializer(props).getAsString(clean, StandardCharsets.UTF_8.toString());
+        LOGGER.info("Writing clean input, size {} ...", cleanString.length());
+        FileUtils.writeStringToFile(new File("clean.html"), cleanString, StandardCharsets.UTF_8.toString());
 
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setNamespaceAware(true);
@@ -144,9 +151,9 @@ public class ParserOms implements Parser {
             String type = cleanContent(firstCell.getTextContent(), true);
             LOGGER.debug("  Rows: {}, Cols: {}, Type: '{}'", rowCount, colCount, type);
             if ("RequirementsClass".equalsIgnoreCase(type)) {
-                parseRequirementsClassTable(rowList);
+                parseRequirementsClassTable(rowList, i);
             } else if ("RequirementsSub-class".equalsIgnoreCase(type)) {
-                parseRequirementsClassTable(rowList);
+                parseRequirementsClassTable(rowList, i);
             } else if ("ConformanceClass".equalsIgnoreCase(type)) {
                 parseConformanceClassTable(rowList);
             } else if ((type.startsWith("Requirement/req") || type.startsWith("/req") || type.startsWith("req")) && rowCount == 1) {
@@ -154,7 +161,7 @@ public class ParserOms implements Parser {
             } else if ((type.startsWith("Recommendation/rec") || type.startsWith("/rec")) && rowCount == 1) {
                 parseRecommendationTable(rowList);
             } else {
-                LOGGER.warn("    Unknown table type: {}, {} rows", type, rowCount);
+                LOGGER.warn("    {}: Unknown table type: {}, {} rows", i, type, rowCount);
             }
         }
 
@@ -165,7 +172,7 @@ public class ParserOms implements Parser {
         return this;
     }
 
-    private void parseRequirementsClassTable(NodeList rowList) throws XPathExpressionException {
+    private void parseRequirementsClassTable(NodeList rowList, int tblNr) throws XPathExpressionException {
         int rowCount = rowList.getLength();
         RequerementClass reqClass = null;
         Set<Image> mainImages = Image.emptySet();
@@ -174,7 +181,7 @@ public class ParserOms implements Parser {
             NodeList cellList = (NodeList) exprCellList.evaluate(row, XPathConstants.NODESET);
             int cellCount = cellList.getLength();
             if (cellCount != 2) {
-                LOGGER.error("    Requirement row found with {} cells, expected 2 ({} ; {})", cellCount, getCleanCell(cellList, 0, true), getCleanCell(cellList, 1, true));
+                LOGGER.error("    {}/{}: Requirement row found with {} cells, expected 2 ({} ; {})", tblNr, i, cellCount, getCleanCell(cellList, 0, true), getCleanCell(cellList, 1, true));
                 continue;
             }
             Node nameCell = cellList.item(0).cloneNode(true);

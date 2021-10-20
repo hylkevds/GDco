@@ -116,10 +116,31 @@ public class ParserOms implements Parser {
         LOGGER.info("Cleaning input, size {} ...", dirtyString.length());
         // Strip embedded graphics from MS Word.
         dirtyString = dirtyString.replaceAll("o:gfxdata=\"[^\"]+\"", "");
+
         // Bookmarks cause problems in tables when cleaning.
-        dirtyString = dirtyString.replaceAll("<span style='mso-bookmark:_Toc[0-9]+'></span>", "");
+        int oldLen = dirtyString.length();
+        boolean more = true;
+        while (more) {
+            dirtyString = dirtyString.replaceAll("<span style=['\"]mso-bookmark:_Toc[0-9]+['\"]>(\\s*)</span>", "");
+            int newLen = dirtyString.length();
+            more = oldLen != newLen;
+            oldLen = newLen;
+        }
+
         TagNode clean = cleaner.clean(dirtyString);
         String cleanString = new PrettyXmlSerializer(props).getAsString(clean, StandardCharsets.UTF_8.toString());
+
+        // Bookmarks cause problems in tables when cleaning.
+        oldLen = cleanString.length();
+        more = true;
+        while (more) {
+            cleanString = cleanString.replaceAll("<span style=['\"]mso-bookmark:_Toc[0-9]+['\"]>(\\s*)</span>", "");
+            int newLen = cleanString.length();
+            more = oldLen != newLen;
+            oldLen = newLen;
+        }
+        cleanString = cleanString.replaceAll("<td>(\\s*)</td>", "");
+
         LOGGER.info("Writing clean input, size {} ...", cleanString.length());
         FileUtils.writeStringToFile(new File("clean.html"), cleanString, StandardCharsets.UTF_8.toString());
 
@@ -255,7 +276,7 @@ public class ParserOms implements Parser {
 
                 default:
                     value = cleanContent(valueCell.getTextContent(), false);
-                    LOGGER.warn("Unknown row: {} - {}", name, value);
+                    LOGGER.warn("    {}/{}: Unknown row: {} - {}", tblNr, i, name, value);
             }
         }
     }
